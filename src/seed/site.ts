@@ -40,7 +40,7 @@ export const seedContent = {
   storyText:
     'Ugo cooks every pot from scratch with recipes from home: slow-cooked stews, smoky party jollof and suya spiced the Lagos way.',
   phone: '0191 234 5678',
-  email: 'hello@cookbyugo.co.uk',
+  email: 'orders@cookedbyugo.com',
   whatsappNumber: '441912345678',
   areaLabel: 'Newcastle upon Tyne, NE1',
   favouriteDishIds: ['party-jollof-rice', 'suya-platter', 'pounded-yam-egusi', 'fried-plantain'],

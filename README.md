@@ -28,15 +28,16 @@ Sign in to the admin dashboard with `owner@example.com`, `kitchen@example.com` o
 
 `docker compose up` is an alternative to `npm run db:dev`.
 
-| Script             | What it does                           |
-| ------------------ | -------------------------------------- |
-| `npm run db:dev`   | Start a local MongoDB                  |
-| `npm run db:reset` | Wipe the local database                |
-| `npm run seed`     | Add starting data, without overwriting |
-| `npm run dev`      | Start the API with reload              |
-| `npm test`         | Run tests on a temporary database      |
-| `npm run lint`     | Run ESLint                             |
-| `npm run build`    | Compile to `dist`                      |
+| Script                 | What it does                                     |
+| ---------------------- | ------------------------------------------------ |
+| `npm run db:dev`       | Start a local MongoDB                            |
+| `npm run db:reset`     | Wipe the local database                          |
+| `npm run seed`         | Add starting data, without overwriting           |
+| `npm run create-owner` | Create the first owner and print a password link |
+| `npm run dev`          | Start the API with reload                        |
+| `npm test`             | Run tests on a temporary database                |
+| `npm run lint`         | Run ESLint                                       |
+| `npm run build`        | Compile to `dist`                                |
 
 ## Local services
 
@@ -78,17 +79,34 @@ staff session, and `requirePermission` checks the role on each route.
 
 ## Going live
 
-1. Create a MongoDB Atlas cluster, and allow only the API's network access.
-2. Set every value in `.env.example`, with `NODE_ENV=production`. The API refuses to start if a
-   required key is missing.
-3. Host the API on the same parent domain as the admin dashboard, such as `api.example.com` and
-   `admin.example.com`. The session cookie is `SameSite=Lax`, so sign-in fails across different
-   domains.
-4. Set `ALLOWED_ORIGINS` to the two live website addresses.
-5. Add a Stripe webhook to `https://<api>/api/webhooks/stripe` for `payment_intent.succeeded`.
-6. Set up the sender domain in Brevo, with SPF, DKIM and DMARC.
-7. Run `npm run seed` to load the starting menu and settings. To create the first owner, add a
-   staff record with the role `owner` and send them a password reset.
+The live addresses are `cookedbyugo.com` for the customer site, `admin.cookedbyugo.com` for the
+dashboard and `api.cookedbyugo.com` for this API. The session cookie is `SameSite=Lax`, so the
+dashboard and API must share this domain, and staff sign-in fails on an `onrender.com` address.
+
+1. Create a MongoDB Atlas cluster, and allow the API host's outbound IP addresses.
+2. Set every value in `.env.example` except `SEED_PASSWORD`, with `NODE_ENV=production`. The API
+   refuses to start if a required key is missing.
+3. Set `ALLOWED_ORIGINS` to the live website addresses.
+4. Add a Stripe webhook to `https://api.cookedbyugo.com/api/webhooks/stripe` for
+   `payment_intent.succeeded`.
+5. Authenticate `cookedbyugo.com` in Brevo, with SPF, DKIM and DMARC.
+6. Load the starting menu and settings, then create the first owner. Run these once, on the host or
+   from a laptop with `MONGODB_URI` and `ADMIN_URL` set for the live database:
+
+   ```bash
+   npm run seed
+   npm run create-owner -- admin@cookedbyugo.com
+   ```
+
+   The second command prints a private link for setting the password. It expires in 72 hours, and
+   running the command again gives a new link.
+
+### Render
+
+- **Build command:** `npm ci --include=dev && npm run build`
+- **Start command:** `npm start`
+- **Health check path:** `/health`
+- Set `NODE_VERSION` to `24`. Render provides `PORT`.
 
 ## Still to do
 

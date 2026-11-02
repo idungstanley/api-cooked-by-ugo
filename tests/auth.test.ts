@@ -2,6 +2,8 @@ import { authenticator } from 'otplib'
 import request from 'supertest'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { hashToken } from '../src/modules/auth/auth.tokens.js'
+import { createOwner } from '../src/seed/create-owner.js'
+import { isLocalDatabase } from '../src/seed/run.js'
 import { Staff } from '../src/modules/staff/staff.model.js'
 import { app, PASSWORD, placeOrder, resetDb, signIn, startDb, stopDb } from './helpers.js'
 
@@ -175,5 +177,35 @@ describe('staff rules', () => {
       .send({ name: 'Kitchen', email: 'kitchen@test.com', role: 'rider' })
       .expect(200)
     await kitchen.get('/api/auth/me').expect(401)
+  })
+})
+
+describe('first owner', () => {
+  const tokenFrom = (link: string) => new URL(link).searchParams.get('token') ?? ''
+
+  it('creates an owner who can set a password and sign in', async () => {
+    const link = await createOwner('First.Owner@test.com', 'First Owner')
+    const password = 'a-long-owner-password'
+
+    await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: tokenFrom(link), password })
+      .expect(204)
+    const response = await login('first.owner@test.com', password).expect(200)
+    expect(response.body.user.role).toBe('owner')
+  })
+
+  it('can be re-run for a new link, but never promotes existing staff', async () => {
+    await createOwner('owner@test.com', 'Owner')
+    await expect(createOwner('kitchen@test.com', 'Kitchen')).rejects.toThrow('already exists')
+  })
+})
+
+describe('seeding', () => {
+  it('only treats local databases as safe for sample logins', () => {
+    expect(isLocalDatabase('mongodb://127.0.0.1:27017/app')).toBe(true)
+    expect(isLocalDatabase('mongodb://localhost:27017/app')).toBe(true)
+    expect(isLocalDatabase('mongodb+srv://user:pass@cluster.mongodb.net/app')).toBe(false)
+    expect(isLocalDatabase('mongodb+srv://localhost.evil.mongodb.net/app')).toBe(false)
   })
 })

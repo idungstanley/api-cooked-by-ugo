@@ -41,13 +41,17 @@ export const seedCatalog = async () => {
   await insertMissing(SiteContent, [{ ...seedContent, _id: CONTENT_ID }])
 }
 
+export const isLocalDatabase = (uri: string) => /\/\/(127\.0\.0\.1|localhost)[:/]/.test(uri)
+
+const canCreateSampleStaff = () => !isProduction && isLocalDatabase(env.MONGODB_URI)
+
 const main = async () => {
   await mongoose.connect(env.MONGODB_URI)
   await seedCatalog()
 
-  // Sample logins must never exist on a live database.
+  // Sample logins must never exist on a live database, including when seeding one from a laptop.
   const password = process.env.SEED_PASSWORD
-  if (!isProduction && password) {
+  if (password && canCreateSampleStaff()) {
     const passwordHash = await hashPassword(password)
     await insertMissing(
       Staff,

@@ -16,7 +16,7 @@ const schema = z
     STRIPE_SECRET_KEY: optional,
     STRIPE_WEBHOOK_SECRET: optional,
     BREVO_API_KEY: optional,
-    EMAIL_FROM: z.string().default('orders@cookbyugo.co.uk'),
+    EMAIL_FROM: z.string().default('orders@cookedbyugo.com'),
     KITCHEN_EMAIL: optional,
     CLOUDINARY_URL: optional,
   })

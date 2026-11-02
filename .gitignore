@@ -427,10 +427,10 @@ FodyWeavers.xsd
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
 
-# Local
-dist/
-.mongo-data/
-uploads/
+# Local. Anchored to the repo root, so source folders with these names are kept.
+/dist/
+/.mongo-data/
+/uploads/
 .env
 .env.*
 !.env.example
