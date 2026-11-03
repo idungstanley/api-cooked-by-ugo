@@ -27,6 +27,19 @@ describe('image uploads', () => {
     await owner.get(path).expect(200).expect('content-type', /png/)
   })
 
+  it('explains when an image is too large', async () => {
+    const owner = await signIn('owner@test.com')
+    const response = await owner
+      .post('/api/uploads')
+      .attach('file', Buffer.alloc(11 * 1024 * 1024), {
+        filename: 'big.png',
+        contentType: 'image/png',
+      })
+
+    expect(response.status).toBe(400)
+    expect(response.body.message).toContain('too large')
+  })
+
   it('rejects other file types and staff without menu access', async () => {
     const owner = await signIn('owner@test.com')
     await owner

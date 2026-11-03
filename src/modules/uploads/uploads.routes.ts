@@ -4,15 +4,21 @@ import { v2 as cloudinary } from 'cloudinary'
 import { Router } from 'express'
 import multer from 'multer'
 import { env } from '../../config/env.js'
-import { badRequest } from '../../lib/errors.js'
+import { AppError, badRequest } from '../../lib/errors.js'
 import { createId } from '../../lib/ids.js'
 import { requireAuth, requirePermission } from '../../middleware/auth.js'
 
-const MAX_BYTES = 5 * 1024 * 1024
+/** Phone photos are often over 5MB. Cloudinary's free plan accepts up to 10MB. */
+const MAX_BYTES = 10 * 1024 * 1024
 const EXTENSIONS: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
+}
+
+/** A copied placeholder such as `<your_api_secret>` passes start-up but fails every upload. */
+if (env.CLOUDINARY_URL && !/^cloudinary:\/\/\d+:[^<>@\s]+@[\w-]+$/.test(env.CLOUDINARY_URL)) {
+  console.warn('CLOUDINARY_URL should look like cloudinary://<api_key>:<api_secret>@<cloud_name>')
 }
 
 const upload = multer({
@@ -25,8 +31,16 @@ const saveToCloudinary = (buffer: Buffer) =>
   new Promise<string>((resolve, reject) => {
     cloudinary.uploader
       .upload_stream({ folder: 'cooked-by-ugo', resource_type: 'image' }, (error, result) => {
-        if (error || !result) reject(error ?? new Error('Upload failed'))
-        else resolve(result.secure_url)
+        if (error || !result) {
+          // Cloudinary rejects with a plain object, so log it and give staff a clear message.
+          console.error('Cloudinary upload failed', error)
+          reject(
+            new AppError(
+              502,
+              'Image storage rejected the upload. Check CLOUDINARY_URL on the server.',
+            ),
+          )
+        } else resolve(result.secure_url)
       })
       .end(buffer)
   })
@@ -48,7 +62,7 @@ uploadsRouter.post(
   requirePermission('menu.edit', 'deals'),
   upload.single('file'),
   async (req, res) => {
-    if (!req.file) throw badRequest('Upload a JPEG, PNG or WebP image under 5MB')
+    if (!req.file) throw badRequest('Upload a JPEG, PNG or WebP image under 10MB')
     const url = env.CLOUDINARY_URL
       ? await saveToCloudinary(req.file.buffer)
       : await saveLocally(
