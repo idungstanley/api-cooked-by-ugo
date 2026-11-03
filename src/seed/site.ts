@@ -8,15 +8,7 @@ const hours = (day: number, opensAt: string, closesAt: string) => ({
 /** Delivery values are assumptions until the client confirms them. */
 export const seedSettings = {
   ordersPaused: false,
-  hours: [
-    hours(1, '12:00', '21:00'),
-    hours(2, '12:00', '21:00'),
-    hours(3, '12:00', '21:00'),
-    hours(4, '12:00', '21:00'),
-    hours(5, '12:00', '22:00'),
-    hours(6, '12:00', '22:00'),
-    hours(0, '13:00', '20:00'),
-  ],
+  hours: [1, 2, 3, 4, 5, 6, 0].map((day) => hours(day, '12:00', '20:00')),
   closures: [{ id: 'christmas', date: '2026-12-25', label: 'Christmas Day' }],
   zones: [
     { id: 'ne1', prefix: 'NE1', fee: 299, minimumOrder: 1200, active: true },

@@ -42,6 +42,7 @@ const groupHours = (settings: ShopSettingsDoc) => {
   })
 
   return groups.map((group) => {
+    if (group.days.length === 7) return { ...group, label: 'Every day' }
     const first = DAY_LABELS[group.days[0] ?? 0]
     const last = DAY_LABELS[group.days.at(-1) ?? 0]
     return { ...group, label: first === last ? (first ?? '') : `${first} to ${last}` }
