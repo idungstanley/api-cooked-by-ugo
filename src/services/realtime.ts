@@ -20,7 +20,10 @@ export const startRealtime = (server: HttpServer) => {
   io = new Server(server, { cors: { origin: allowedOrigins, credentials: true } })
 
   io.use(async (socket, next) => {
-    const staff = await staffFromToken(readCookie(socket.handshake.headers.cookie, SESSION_COOKIE))
+    const token =
+      (socket.handshake.auth as { token?: string }).token ??
+      readCookie(socket.handshake.headers.cookie, SESSION_COOKIE)
+    const staff = await staffFromToken(token)
     if (!staff) {
       next(new Error('Please sign in'))
       return

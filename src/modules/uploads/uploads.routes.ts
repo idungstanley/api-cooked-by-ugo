@@ -51,7 +51,11 @@ uploadsRouter.post(
     if (!req.file) throw badRequest('Upload a JPEG, PNG or WebP image under 5MB')
     const url = env.CLOUDINARY_URL
       ? await saveToCloudinary(req.file.buffer)
-      : await saveLocally(req.file.buffer, EXTENSIONS[req.file.mimetype] ?? '', `${req.protocol}://${req.get('host')}`)
+      : await saveLocally(
+          req.file.buffer,
+          EXTENSIONS[req.file.mimetype] ?? '',
+          `${req.protocol}://${req.get('host')}`,
+        )
     res.status(201).json({ url })
   },
 )

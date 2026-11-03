@@ -61,6 +61,33 @@ describe('sign-in', () => {
       .expect(200)
   })
 
+  it('accepts the session token as a header, for admins on a separate domain', async () => {
+    const { body } = await login('kitchen@test.com').expect(200)
+
+    const me = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${body.token}`)
+      .expect(200)
+    expect(me.body.user.role).toBe('kitchen')
+    await request(app).get('/api/orders').set('Authorization', `Bearer ${body.token}`).expect(403)
+    await request(app).get('/api/auth/me').set('Authorization', 'Bearer not-a-token').expect(401)
+  })
+
+  it('revokes the session on the server when signing out', async () => {
+    const { body } = await login('kitchen@test.com').expect(200)
+    const auth = { Authorization: `Bearer ${body.token}` }
+
+    await request(app).post('/api/auth/logout').set(auth).expect(204)
+    await request(app).get('/api/auth/me').set(auth).expect(401)
+  })
+
+  it('stops a token working once the person is deactivated', async () => {
+    const { body } = await login('rider@test.com').expect(200)
+    const owner = await signIn('owner@test.com')
+    await owner.patch('/api/staff/rider/active').send({ active: false }).expect(200)
+    await request(app).get('/api/auth/me').set('Authorization', `Bearer ${body.token}`).expect(401)
+  })
+
   it('does not accept a two-step token as a session', async () => {
     await Staff.updateOne(
       { _id: 'owner' },
@@ -70,6 +97,10 @@ describe('sign-in', () => {
     await request(app)
       .get('/api/auth/me')
       .set('Cookie', `cbu_session=${body.challengeToken}`)
+      .expect(401)
+    await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${body.challengeToken}`)
       .expect(401)
   })
 })

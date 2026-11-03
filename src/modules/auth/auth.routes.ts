@@ -6,7 +6,7 @@ import { RESET_TOKEN_HOURS } from '../../config/constants.js'
 import { env } from '../../config/env.js'
 import { badRequest, unauthorised } from '../../lib/errors.js'
 import { createSecret } from '../../lib/ids.js'
-import { currentStaff, requireAuth } from '../../middleware/auth.js'
+import { currentStaff, requireAuth, sessionToken, staffFromToken } from '../../middleware/auth.js'
 import { authLimiter } from '../../middleware/rateLimit.js'
 import { parse } from '../../middleware/validate.js'
 import { sendEmail } from '../../services/email.js'
@@ -34,8 +34,9 @@ export const authRouter = Router()
 const startSession = async (res: Response, staff: InstanceType<typeof Staff>) => {
   staff.lastActiveAt = new Date()
   await staff.save()
-  res.cookie(SESSION_COOKIE, signSession(staff.id, staff.tokenVersion), sessionCookieOptions)
-  res.json({ user: staff })
+  const token = signSession(staff.id, staff.tokenVersion)
+  res.cookie(SESSION_COOKIE, token, sessionCookieOptions)
+  res.json({ user: staff, token })
 }
 
 authRouter.post('/login', authLimiter, async (req, res) => {
@@ -69,7 +70,13 @@ authRouter.post('/verify-code', authLimiter, async (req, res) => {
   await startSession(res, staff)
 })
 
-authRouter.post('/logout', (_req, res) => {
+/** Tokens are stateless, so signing out revokes them by bumping the version, on every device. */
+authRouter.post('/logout', async (req, res) => {
+  const staff = await staffFromToken(sessionToken(req))
+  if (staff) {
+    staff.tokenVersion += 1
+    await staff.save()
+  }
   res.clearCookie(SESSION_COOKIE, { ...sessionCookieOptions, maxAge: undefined })
   res.status(204).end()
 })

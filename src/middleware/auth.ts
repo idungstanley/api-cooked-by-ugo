@@ -21,8 +21,21 @@ export const staffFromToken = async (token: string | undefined) => {
   }
 }
 
+const BEARER_PREFIX = 'Bearer '
+
+/**
+ * The cookie works when the admin and API share a domain. The header covers separate domains,
+ * where browsers such as Safari refuse to send the cookie.
+ */
+export const sessionToken = (req: Request) => {
+  const header = req.headers.authorization
+  return header?.startsWith(BEARER_PREFIX)
+    ? header.slice(BEARER_PREFIX.length)
+    : req.cookies?.[SESSION_COOKIE]
+}
+
 export const requireAuth: RequestHandler = async (req, _res, next) => {
-  const staff = await staffFromToken(req.cookies?.[SESSION_COOKIE])
+  const staff = await staffFromToken(sessionToken(req))
   if (!staff) throw unauthorised()
   req.staff = staff
   next()
