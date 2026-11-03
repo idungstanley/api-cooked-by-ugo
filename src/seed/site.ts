@@ -38,7 +38,7 @@ export const seedContent = {
   heroText:
     'Jollof, suya, egusi and dodo, cooked from scratch every day by Ugo and delivered hot in 35 to 45 minutes.',
   storyText:
-    'Ugo cooks every pot from scratch with recipes from home: slow-cooked stews, smoky party jollof and suya spiced the Lagos way.',
+    'At Cooked by Ugo, we believe good food starts with fresh ingredients, a little patience and a whole lot of love.\n\nEvery dish is freshly prepared from scratch, bringing the warmth and comfort of home cooking to your table. From rich, slow-cooked stews and smoky party jollof to flavour-packed suya-spiced favourites, every pot is made with care, using recipes and flavours inspired by home.',
   phone: '0191 234 5678',
   email: 'orders@cookedbyugo.com',
   whatsappNumber: '441912345678',
