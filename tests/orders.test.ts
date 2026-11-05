@@ -27,12 +27,33 @@ describe('pricing', () => {
     expect(response.body.order).toMatchObject({ subtotal: 2898, deliveryFee: 0, total: 2898 })
     expect(response.body.order.items[0]).toMatchObject({
       name: 'Party Jollof Rice',
+      basePrice: 1299,
       unitPrice: 1449,
       summary: 'Vegetarian · Fried Plantain · Naija hot',
+      options: [
+        { groupTitle: 'Choose your protein', label: 'Vegetarian', price: 0 },
+        { groupTitle: 'Add a side', label: 'Fried Plantain', price: 150 },
+        { groupTitle: 'Spice level', label: 'Naija hot', price: 0 },
+      ],
     })
   })
 
-  it('charges the zone fee below the free delivery threshold', async () => {
+  it("keeps the customer's note on each dish", async () => {
+    const { order } = await placeOrder({ items: [{ ...jollof, note: 'Not too spicy please' }] })
+    expect((order as unknown as { items: { note: string }[] }).items[0]?.note).toBe(
+      'Not too spicy please',
+    )
+  })
+
+  it('accepts phone numbers from other countries', async () => {
+    const response = await post(
+      orderBody({ delivery: { ...orderBody().delivery, phone: '+234 803 123 4567' } }),
+    )
+    expect(response.status).toBe(201)
+    expect(response.body.order.customerPhone).toBe('+234 803 123 4567')
+  })
+
+  it('charges the fee for the delivery ring the postcode falls in', async () => {
     const { order } = await placeOrder({
       items: [
         { ...jollof, quantity: 1 },
@@ -40,14 +61,33 @@ describe('pricing', () => {
       ],
       postcode: 'NE3 1DA',
     })
-    expect(order).toMatchObject({ subtotal: 1748, deliveryFee: 349, total: 2097 })
+    // Four miles out is the middle ring.
+    expect(order).toMatchObject({ subtotal: 1748, deliveryFee: 399, total: 2147 })
   })
 
-  it('quotes the same totals before an order is placed', async () => {
-    const response = await request(app)
+  it('quotes the same totals before an order is placed, with or without a postcode', async () => {
+    const withPostcode = await request(app)
       .post('/api/public/quote')
       .send({ items: [jollof], postcode: 'NE1 4ST' })
-    expect(response.body).toEqual({ subtotal: 2898, deliveryFee: 0, total: 2898 })
+    expect(withPostcode.body).toMatchObject({
+      subtotal: 2898,
+      discount: 0,
+      deliveryFee: 0,
+      total: 2898,
+    })
+
+    const basketOnly = await request(app)
+      .post('/api/public/quote')
+      .send({ items: [jollof] })
+    expect(basketOnly.body).toMatchObject({ subtotal: 2898, total: 2898, delivery: null })
+  })
+
+  it('checks a postcode and says whether it is covered', async () => {
+    const near = await request(app).get('/api/public/postcodes/NE3 1DA').expect(200)
+    expect(near.body).toMatchObject({ covered: true, fee: 399, distanceMiles: 4, addresses: [] })
+
+    const far = await request(app).get('/api/public/postcodes/SW1A1AA').expect(200)
+    expect(far.body.covered).toBe(false)
   })
 
   it.each([
@@ -70,8 +110,7 @@ describe('pricing', () => {
       'no longer available',
     ],
     ['an unknown product', { items: [{ productId: 'nope', quantity: 1 }] }, 'no longer available'],
-    ['a postcode outside the zones', { postcode: 'SW1A 1AA' }, 'do not deliver'],
-    ['an inactive zone', { postcode: 'NE6 1AB' }, 'do not deliver'],
+    ['a postcode outside the delivery radius', { postcode: 'SW1A 1AA' }, 'deliver up to 10 miles'],
     [
       'an order below the minimum',
       { items: [{ productId: 'zobo', quantity: 1 }] },
@@ -130,20 +169,14 @@ describe('placing orders', () => {
     await placeOrder()
     await Customer.updateOne({}, { blocked: true })
     expect(
-      (await post(orderBody({ delivery: { ...orderBody().delivery, phone: '+44 7700 900123' } })))
+      (await post(orderBody({ delivery: { ...orderBody().delivery, phone: '+44 7400 123456' } })))
         .status,
     ).toBe(403)
   })
 
-  it('enforces the pay-on-delivery limit', async () => {
-    await ShopSettings.updateOne({}, { payOnDeliveryLimit: 1000 })
-    const response = await post(orderBody())
-    expect(response.body.message).toContain('must be paid by card')
-  })
-
   it('reuses the customer record for a returning phone number', async () => {
     await placeOrder()
-    await placeOrder({ delivery: { ...orderBody().delivery, phone: '+447700900123' } })
+    await placeOrder({ delivery: { ...orderBody().delivery, phone: '+447400123456' } })
     expect(await Customer.countDocuments()).toBe(1)
   })
 })
@@ -222,8 +255,9 @@ describe('order lifecycle', () => {
     expect(results.map(({ status }) => status).sort()).toEqual([200, 409])
   })
 
-  it('requires payment to be recorded before a pay-on-delivery order closes', async () => {
+  it('requires payment to be recorded before an older pay-on-delivery order closes', async () => {
     const { order } = await placeOrder()
+    await Order.updateOne({ _id: order.id }, { paymentMethod: 'on-delivery', paymentStatus: 'due' })
     const kitchen = await signIn('kitchen@test.com')
     const rider = await signIn('rider@test.com')
 
@@ -281,8 +315,9 @@ describe('refunds and cancellation', () => {
     expect(saved?.refundedAmount).toBe(order.total)
   })
 
-  it('has nothing to refund on a pay-on-delivery order', async () => {
+  it('has nothing to refund on an older pay-on-delivery order', async () => {
     const { order } = await placeOrder()
+    await Order.updateOne({ _id: order.id }, { paymentMethod: 'on-delivery', paymentStatus: 'due' })
     const owner = await signIn('owner@test.com')
     await owner
       .post(`/api/orders/${order.id}/refund`)
@@ -320,5 +355,46 @@ describe('customer privacy', () => {
       postcode: '',
       total: order.total,
     })
+  })
+})
+
+describe('delivery radius', () => {
+  it('turns away postcodes in a ring that has been switched off', async () => {
+    await ShopSettings.updateOne(
+      { 'deliveryRadii.maxMiles': 10 },
+      { $set: { 'deliveryRadii.$.active': false } },
+    )
+    const response = await post(orderBody({ postcode: 'NE13 6AA' }))
+    expect(response.status).toBe(422)
+    expect(response.body.message).toContain('deliver up to 6 miles')
+  })
+})
+
+describe('timing', () => {
+  it('sets the arrival time from preparation plus delivery time', async () => {
+    await ShopSettings.updateOne({}, { prepMinutes: 60, deliveryMinutes: 25 })
+    const { order } = await placeOrder()
+    expect(order).toMatchObject({ etaMinutes: 85, deliveryMinutes: 25 })
+
+    const slots = await request(app).get('/api/public/slots').expect(200)
+    const earliest = (slots.body as { at: number }[])[0]?.at ?? Infinity
+    expect(earliest - Date.now()).toBeGreaterThanOrEqual(85 * 60_000 - 60_000)
+  })
+})
+
+describe('existing shops', () => {
+  it('fills in the new delivery settings for a shop saved before they existed', async () => {
+    await ShopSettings.collection.updateOne(
+      {},
+      { $unset: { kitchen: 1, deliveryRadii: 1, prepMinutes: 1, deliveryMinutes: 1 } },
+    )
+    const response = await request(app)
+      .post('/api/public/quote')
+      .send({ items: [jollof], postcode: 'NE3 1DA' })
+      .expect(200)
+    expect(response.body.delivery).toMatchObject({ covered: true, fee: 399 })
+
+    const site = await request(app).get('/api/public/site').expect(200)
+    expect(site.body.leadMinutes).toBe(50)
   })
 })

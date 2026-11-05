@@ -17,7 +17,7 @@ export interface DishDoc {
   shortDescription: string
   longDescription?: string
   price: number
-  kcal: number
+  kcal?: number
   image: string
   badges: string[]
   allergens: string[]
@@ -30,6 +30,8 @@ export interface OptionChoiceDoc {
   id: string
   label: string
   priceDelta: number
+  /** A small photo, so customers can see the side or soup they are adding. */
+  image?: string
 }
 
 export interface OptionGroupDoc {
@@ -65,12 +67,12 @@ const dishSchema = new Schema<DishDoc>(
     _id: { type: String, required: true },
     categoryId: { type: String, required: true, index: true },
     name: { type: String, required: true, trim: true },
-    description: { type: String, required: true },
-    shortDescription: { type: String, required: true },
+    description: { type: String, default: '' },
+    shortDescription: { type: String, default: '' },
     longDescription: String,
     price: pence,
-    kcal: { type: Number, default: 0 },
-    image: { type: String, required: true },
+    kcal: Number,
+    image: { type: String, default: '' },
     badges: [String],
     allergens: [String],
     optionGroupIds: [String],
@@ -95,7 +97,13 @@ export const OptionGroup = model<OptionGroupDoc>(
       defaultChoiceId: String,
       promptLabel: String,
       choices: [
-        { _id: false, id: { type: String, required: true }, label: String, priceDelta: pence },
+        {
+          _id: false,
+          id: { type: String, required: true },
+          label: String,
+          priceDelta: pence,
+          image: String,
+        },
       ],
     },
     baseOptions,

@@ -88,7 +88,8 @@ dashboard and API must share this domain, and staff sign-in fails on an `onrende
    refuses to start if a required key is missing.
 3. Set `ALLOWED_ORIGINS` to the live website addresses.
 4. Add a Stripe webhook to `https://api.cookedbyugo.com/api/webhooks/stripe` for
-   `payment_intent.succeeded`.
+   `payment_intent.succeeded`, and set `STRIPE_PUBLISHABLE_KEY` so checkout can show the card form.
+   Every order is paid by card at checkout. For Apple Pay, verify the website's domain in Stripe.
 5. Authenticate `cookedbyugo.com` in Brevo, with SPF, DKIM and DMARC.
 6. Load the starting menu and settings, then create the first owner. Run these once, on the host or
    from a laptop with `MONGODB_URI` and `ADMIN_URL` set for the live database:
@@ -107,6 +108,13 @@ dashboard and API must share this domain, and staff sign-in fails on an `onrende
 - **Start command:** `npm start`
 - **Health check path:** `/health`
 - Set `NODE_VERSION` to `24`. Render provides `PORT`.
+
+## Delivery area and timing
+
+Delivery is by distance, not postcode lists. The owner sets the kitchen postcode and one or more
+rings on the map in Shop settings, such as "up to 3 miles, £2.99". A customer's postcode is looked
+up on postcodes.io (free, no key) and pays the fee of the smallest ring it falls inside. The
+arrival time customers see is the average preparation time plus the average delivery time.
 
 ## Still to do
 

@@ -6,16 +6,24 @@ import { requireAuth, requirePermission } from '../../middleware/auth.js'
 import { parse } from '../../middleware/validate.js'
 import { Category, Dish, OptionGroup } from './catalog.model.js'
 
+/** Only the name, category and price are needed, so a dish can go live quickly. */
 const dishInput = z.object({
   categoryId: z.string().min(1),
   name: z.string().trim().min(2),
-  description: z.string().trim().min(5),
+  description: z.string().trim().max(500).default(''),
   price: z.number().int().positive(),
-  kcal: z.number().int().min(0),
-  image: z.string().min(1),
-  badges: z.array(z.enum(['Popular', 'Spicy'])),
-  allergens: z.array(z.string()),
-  optionGroupIds: z.array(z.string()),
+  kcal: z.number().int().min(0).nullish(),
+  image: z.string().default(''),
+  badges: z.array(z.enum(['Popular', 'Spicy'])).default([]),
+  allergens: z.array(z.string()).default([]),
+  optionGroupIds: z.array(z.string()).default([]),
+})
+
+/** A missing calorie count is removed rather than stored as zero. */
+const dishUpdate = ({ kcal, ...input }: z.infer<typeof dishInput>) => ({
+  ...input,
+  shortDescription: input.description,
+  ...(kcal == null ? { $unset: { kcal: 1 } } : { kcal }),
 })
 
 const optionGroupInput = z.object({
@@ -28,6 +36,7 @@ const optionGroupInput = z.object({
         id: z.string(),
         label: z.string().trim().min(1),
         priceDelta: z.number().int().min(0),
+        image: z.string().optional(),
       }),
     )
     .min(1),
@@ -60,8 +69,10 @@ catalogRouter.get('/option-groups', requirePermission('menu'), async (_req, res)
 catalogRouter.post('/dishes', requirePermission('menu.edit'), async (req, res) => {
   const input = parse(dishInput, req.body)
   const last = await Dish.findOne({ categoryId: input.categoryId }).sort({ sortOrder: -1 })
+  const { kcal, ...fields } = input
   const dish = await Dish.create({
-    ...input,
+    ...fields,
+    ...(kcal == null ? {} : { kcal }),
     _id: createId('dish'),
     shortDescription: input.description,
     sortOrder: (last?.sortOrder ?? 0) + 1,
@@ -71,11 +82,10 @@ catalogRouter.post('/dishes', requirePermission('menu.edit'), async (req, res) =
 
 catalogRouter.put('/dishes/:id', requirePermission('menu.edit'), async (req, res) => {
   const input = parse(dishInput, req.body)
-  const dish = await Dish.findByIdAndUpdate(
-    req.params.id,
-    { ...input, shortDescription: input.description },
-    { returnDocument: 'after', runValidators: true },
-  )
+  const dish = await Dish.findByIdAndUpdate(req.params.id, dishUpdate(input), {
+    returnDocument: 'after',
+    runValidators: true,
+  })
   if (!dish) throw notFound('Dish')
   res.json(dish)
 })

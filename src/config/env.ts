@@ -19,6 +19,12 @@ const schema = z
     EMAIL_FROM: z.string().default('orders@cookedbyugo.com'),
     KITCHEN_EMAIL: optional,
     CLOUDINARY_URL: optional,
+    /** Shown to the browser for Stripe's payment form. Safe to share, unlike the secret key. */
+    STRIPE_PUBLISHABLE_KEY: optional,
+    /** Royal Mail address lookup. Without it, customers type their street. */
+    IDEAL_POSTCODES_API_KEY: optional,
+    /** The customer site, for links in emails such as "rate your order". */
+    SITE_URL: z.string().default('http://localhost:5173'),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV !== 'production') return

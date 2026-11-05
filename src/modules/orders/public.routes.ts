@@ -6,16 +6,21 @@ import { shopNow } from '../../lib/shopTime.js'
 import { enquiryLimiter, orderLimiter } from '../../middleware/rateLimit.js'
 import { parse } from '../../middleware/validate.js'
 import { escapeHtml, sendEmail } from '../../services/email.js'
+import { addressLookupEnabled, listAddresses } from '../../services/postcodes.js'
+import { optionalAccount } from '../accounts/accounts.auth.js'
 import { Category, Dish, OptionGroup } from '../catalog/catalog.model.js'
 import { getContent } from '../content/content.model.js'
 import { Deal, isDealAvailable } from '../deals/deals.model.js'
 import { Enquiry } from '../enquiries/enquiries.model.js'
 import { getTodaySlots, isOpenAt } from '../settings/availability.js'
-import { getSettings, type ShopSettingsDoc } from '../settings/settings.model.js'
+import { findLiveOffers, offerLabel } from '../offers/offers.model.js'
+import { createReview, publicReviews, reviewInput } from '../reviews/reviews.routes.js'
+import { Review, summariseReviews } from '../reviews/reviews.model.js'
+import { getSettings, leadMinutes, type ShopSettingsDoc } from '../settings/settings.model.js'
 import { Order } from './orders.model.js'
-import { cartInput, orderInput } from './orders.schema.js'
+import { orderInput, quoteInput } from './orders.schema.js'
 import { createOrder } from './orders.service.js'
-import { priceCart } from './pricing.js'
+import { priceCart, quoteDelivery } from './pricing.js'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
@@ -104,14 +109,15 @@ publicRouter.get('/site', async (_req, res) => {
     whatsappNumber: content.whatsappNumber,
     areaLabel: content.areaLabel,
     directionsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(content.areaLabel)}`,
-    deliveryWindow: `${settings.etaMinutes} min`,
+    deliveryWindow: `${leadMinutes(settings)} min`,
+    leadMinutes: leadMinutes(settings),
     hours,
     isOpen: !settings.ordersPaused && isOpenAt(settings),
     ordersPaused: settings.ordersPaused,
     todayHours: hours.find(({ days }) => days.includes(today.day))?.hoursLabel ?? '',
     freeDeliveryThreshold: settings.freeDeliveryThreshold,
-    cardEnabled: settings.cardEnabled,
-    payOnDeliveryEnabled: settings.payOnDeliveryEnabled,
+    stripePublishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
+    addressLookup: addressLookupEnabled,
   })
 })
 
@@ -121,24 +127,75 @@ publicRouter.get('/slots', async (_req, res) => {
 
 publicRouter.post('/quote', orderLimiter, async (req, res) => {
   const { items: _items, ...totals } = await priceCart(
-    parse(cartInput, req.body),
+    parse(quoteInput, req.body),
     await getSettings(),
   )
   res.json(totals)
 })
 
-publicRouter.post('/orders', orderLimiter, async (req, res) => {
-  res.status(201).json(await createOrder(parse(orderInput, req.body)))
+/** Checks a postcode at checkout: is it real, which city, do we deliver, and its addresses. */
+publicRouter.get('/postcodes/:postcode', orderLimiter, async (req, res) => {
+  const delivery = await quoteDelivery(String(req.params.postcode), await getSettings())
+  const addresses = delivery.covered ? await listAddresses(delivery.postcode) : []
+  res.json({ ...delivery, addresses })
+})
+
+publicRouter.get('/offers', async (_req, res) => {
+  const offers = await findLiveOffers()
+  res.json(
+    offers.map(({ _id, name, type, value, dishIds, minSubtotal, endsAt }) => ({
+      id: _id,
+      name,
+      type,
+      label: offerLabel({ type, value }),
+      dishIds,
+      minSubtotal,
+      endsAt: endsAt?.getTime(),
+    })),
+  )
+})
+
+publicRouter.get('/reviews', async (_req, res) => {
+  const [summary, reviews] = await Promise.all([summariseReviews(), publicReviews(12)])
+  res.json({ summary, reviews })
+})
+
+publicRouter.post('/orders', orderLimiter, optionalAccount, async (req, res) => {
+  res.status(201).json(await createOrder(parse(orderInput, req.body), req.account?.id))
 })
 
 /** Guests have no accounts, so the private key from checkout is what grants access. */
-publicRouter.get('/orders/:id', async (req, res) => {
-  const { key } = parse(z.object({ key: z.string().min(1) }), req.query)
-  const order = await Order.findOne({ _id: req.params.id, trackingKey: key })
+const findTrackedOrder = async (orderId: string, query: unknown) => {
+  const { key } = parse(z.object({ key: z.string().min(1) }), query)
+  const order = await Order.findOne({ _id: orderId, trackingKey: key })
   if (!order) throw notFound('Order')
+  return order
+}
 
-  const { number, status, etaMinutes, items, total, paymentMethod, paymentStatus } = order
-  res.json({ id: order.id, number, status, etaMinutes, items, total, paymentMethod, paymentStatus })
+publicRouter.get('/orders/:id', async (req, res) => {
+  const order = await findTrackedOrder(String(req.params.id), req.query)
+  const review = await Review.findOne({ orderId: order.id })
+  res.json({
+    id: order.id,
+    number: order.number,
+    status: order.status,
+    etaMinutes: order.etaMinutes,
+    createdAt: order.createdAt.getTime(),
+    scheduledFor: order.scheduledFor?.getTime(),
+    items: order.items,
+    subtotal: order.subtotal,
+    discount: order.discount,
+    deliveryFee: order.deliveryFee,
+    total: order.total,
+    paymentStatus: order.paymentStatus,
+    review: review ? { rating: review.rating, comment: review.comment, reply: review.reply } : null,
+  })
+})
+
+publicRouter.post('/orders/:id/review', orderLimiter, async (req, res) => {
+  const order = await findTrackedOrder(String(req.params.id), req.query)
+  const review = await createReview(order, parse(reviewInput, req.body))
+  res.status(201).json({ rating: review.rating, comment: review.comment })
 })
 
 publicRouter.post('/enquiries', enquiryLimiter, async (req, res) => {

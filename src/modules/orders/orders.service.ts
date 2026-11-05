@@ -4,6 +4,7 @@ import {
   type OrderStatus,
 } from '../../config/constants.js'
 import {
+  AppError,
   badRequest,
   conflict,
   forbidden,
@@ -16,13 +17,14 @@ import { hasPermission } from '../../middleware/auth.js'
 import {
   cancelPaymentIntent,
   createPaymentIntent,
+  getPaymentClientSecret,
   paymentsEnabled,
   refundPayment,
 } from '../../services/payments.js'
 import { announceOrderChange } from '../../services/realtime.js'
 import { Customer, normalisePhone } from '../customers/customers.model.js'
 import { isOpenAt } from '../settings/availability.js'
-import { getSettings } from '../settings/settings.model.js'
+import { getSettings, leadMinutes } from '../settings/settings.model.js'
 import type { StaffDoc } from '../staff/staff.model.js'
 import { Staff } from '../staff/staff.model.js'
 import {
@@ -45,8 +47,6 @@ const event = (actor: string, message: string) => ({
   actor,
   message,
 })
-
-const money = (pence: number) => `£${(pence / 100).toFixed(2)}`
 
 const upsertCustomer = async ({ delivery }: OrderInput) => {
   const phoneKey = normalisePhone(delivery.phone)
@@ -86,10 +86,16 @@ const orderResult = (order: OrderRecord, clientSecret?: string) => ({
   clientSecret,
 })
 
-export const createOrder = async (input: OrderInput) => {
+/** A retry of an unpaid order gets its payment form back, so the customer can finish paying. */
+const repeatResult = async (order: OrderRecord) =>
+  order.status === 'pending-payment' && order.stripePaymentIntentId
+    ? orderResult(order, await getPaymentClientSecret(order.stripePaymentIntentId))
+    : orderResult(order)
+
+export const createOrder = async (input: OrderInput, accountId?: string) => {
   // A repeated tap or a retry returns the first order rather than creating a second one.
   const repeat = await Order.findOne({ idempotencyKey: input.idempotencyKey })
-  if (repeat) return orderResult(repeat)
+  if (repeat) return repeatResult(repeat)
 
   const settings = await getSettings()
   if (settings.ordersPaused) throw unprocessable('We are not taking orders right now')
@@ -103,24 +109,15 @@ export const createOrder = async (input: OrderInput) => {
     throw unprocessable('We are closed right now. Please schedule your order for later.')
   }
 
-  const priced = await priceCart(input, settings)
-  const isCard = input.paymentMethod === 'card'
-
-  if (isCard && !settings.cardEnabled)
-    throw unprocessable('Card payments are unavailable right now')
-  if (!isCard) {
-    if (!settings.payOnDeliveryEnabled)
-      throw unprocessable('Pay on delivery is unavailable right now')
-    if (priced.total > settings.payOnDeliveryLimit) {
-      throw unprocessable(`Orders over ${money(settings.payOnDeliveryLimit)} must be paid by card`)
-    }
-  }
-
+  const { delivery, ...priced } = await priceCart(input, settings)
   const customer = await upsertCustomer(input)
-  const awaitingCard = isCard && paymentsEnabled
+  // Without Stripe, in local development and tests, card orders are treated as paid.
+  const awaitingCard = paymentsEnabled
 
   const order = await new Order({
     ...priced,
+    distanceMiles: delivery?.distanceMiles,
+    accountId,
     _id: createId('order'),
     number: await nextOrderNumber(),
     customerId: customer.id,
@@ -128,13 +125,14 @@ export const createOrder = async (input: OrderInput) => {
     customerPhone: customer.phone,
     customerEmail: customer.email,
     address: `${input.delivery.address}, ${input.delivery.city}`,
-    postcode: input.postcode.toUpperCase(),
+    postcode: delivery?.postcode ?? input.postcode.toUpperCase(),
     deliveryNote: input.delivery.note || undefined,
     allergyNote: input.delivery.allergyNote || undefined,
-    paymentMethod: input.paymentMethod,
-    paymentStatus: awaitingCard ? 'pending' : isCard ? 'paid' : 'due',
+    paymentMethod: 'card',
+    paymentStatus: awaitingCard ? 'pending' : 'paid',
     scheduledFor: scheduledFor ? new Date(scheduledFor) : undefined,
-    etaMinutes: settings.etaMinutes,
+    etaMinutes: leadMinutes(settings),
+    deliveryMinutes: settings.deliveryMinutes,
     status: awaitingCard ? 'pending-payment' : 'received',
     events: [event('Website', 'Order placed')],
     trackingKey: createSecret(),
@@ -150,14 +148,23 @@ export const createOrder = async (input: OrderInput) => {
   if (!order) {
     const winner = await Order.findOne({ idempotencyKey: input.idempotencyKey })
     if (!winner) throw conflict('Please try again')
-    return orderResult(winner)
+    return repeatResult(winner)
   }
 
   if (awaitingCard) {
-    const intent = await createPaymentIntent(order.id, order.total, `order-${order.id}`)
-    order.stripePaymentIntentId = intent.id
-    await order.save()
-    return orderResult(order, intent.client_secret ?? undefined)
+    try {
+      const intent = await createPaymentIntent(order.id, order.total, `order-${order.id}`)
+      order.stripePaymentIntentId = intent.id
+      await order.save()
+      return orderResult(order, intent.client_secret ?? undefined)
+    } catch (error) {
+      // Usually a missing or wrong Stripe key. The order is closed so it never reaches the kitchen.
+      console.error(`Could not start payment for ${order.number}`, error)
+      order.status = 'cancelled'
+      order.events.push(event('System', 'Payment could not be started'))
+      await order.save()
+      throw new AppError(503, 'Card payments are not working right now. Please try again shortly.')
+    }
   }
 
   announceNewOrder(order)
@@ -194,6 +201,8 @@ export const confirmCardPayment = async (paymentIntentId: string, amountPaid: nu
     await expired.save()
   }
 }
+
+const money = (pence: number) => `£${(pence / 100).toFixed(2)}`
 
 export const getRefundableAmount = (
   order: Pick<OrderDoc, 'paymentMethod' | 'paymentStatus' | 'total' | 'refundedAmount'>,

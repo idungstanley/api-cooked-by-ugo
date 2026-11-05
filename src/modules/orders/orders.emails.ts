@@ -6,11 +6,20 @@ const money = (pence: number) => `£${(pence / 100).toFixed(2)}`
 
 const itemList = ({ items }: OrderDoc) =>
   `<ul>${items
-    .map(
-      ({ quantity, name, summary }) =>
-        `<li>${quantity} × ${escapeHtml(name)}${summary ? ` (${escapeHtml(summary)})` : ''}</li>`,
-    )
+    .map(({ quantity, name, summary, options = [], note }) => {
+      const extras = options.length
+        ? options
+            .map(({ label, price }) => `${escapeHtml(label)}${price ? ` (+${money(price)})` : ''}`)
+            .join(', ')
+        : summary && escapeHtml(summary)
+      return `<li>${quantity} × ${escapeHtml(name)}${extras ? `<br><small>${extras}</small>` : ''}${
+        note ? `<br><small>Note: ${escapeHtml(note)}</small>` : ''
+      }</li>`
+    })
     .join('')}</ul>`
+
+const trackingUrl = (order: OrderDoc) =>
+  `${env.SITE_URL}/track/${order._id}?key=${order.trackingKey}`
 
 const toCustomer = (order: OrderDoc, subject: string, body: string) => {
   if (order.customerEmail) sendEmail({ to: order.customerEmail, subject, html: body })
@@ -20,9 +29,9 @@ export const emailOrderConfirmation = (order: OrderDoc) => {
   toCustomer(
     order,
     `Order ${order.number} confirmed`,
-    `<p>Thanks ${escapeHtml(order.customerName)}, Ugo is on it.</p>${itemList(order)}<p>Total: ${money(order.total)}. ${
-      order.paymentStatus === 'due' ? 'Please have this ready on delivery.' : 'Paid by card.'
-    }</p><p>If you have an allergy, call us before your food is prepared.</p>`,
+    `<p>Thanks ${escapeHtml(order.customerName)}, Ugo is on it.</p>${itemList(order)}${
+      order.discount ? `<p>Offer saving: −${money(order.discount)}</p>` : ''
+    }<p>Total: ${money(order.total)}. Paid by card.</p><p><a href="${trackingUrl(order)}">Track your order</a></p><p>If you have an allergy, call us before your food is prepared.</p>`,
   )
   if (env.KITCHEN_EMAIL) {
     sendEmail({
@@ -44,7 +53,7 @@ export const emailDelivered = (order: OrderDoc) =>
   toCustomer(
     order,
     `Order ${order.number} delivered`,
-    '<p>Enjoy your meal, and thank you for ordering.</p>',
+    `<p>Enjoy your meal, and thank you for ordering.</p><p>How was it? <a href="${trackingUrl(order)}#review">Rate your order</a>. It takes ten seconds and helps Ugo a lot.</p>`,
   )
 
 export const emailCancelled = (order: OrderDoc, refunded: number) =>

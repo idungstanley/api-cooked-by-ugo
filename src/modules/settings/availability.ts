@@ -1,6 +1,6 @@
-import { SLOT_LEAD_MINUTES, SLOT_STEP_MINUTES } from '../../config/constants.js'
+import { SLOT_STEP_MINUTES } from '../../config/constants.js'
 import { formatSlot, shopNow, toMinutes } from '../../lib/shopTime.js'
-import type { ShopSettingsDoc } from './settings.model.js'
+import { leadMinutes, type ShopSettingsDoc } from './settings.model.js'
 
 const todaysWindow = (settings: ShopSettingsDoc, time: Date) => {
   const { day, date } = shopNow(time)
@@ -15,13 +15,13 @@ export const isOpenAt = (settings: ShopSettingsDoc, time = new Date()) => {
   return Boolean(window && minutes >= window.opens && minutes < window.closes)
 }
 
-/** Delivery times left today, far enough ahead for the kitchen and inside opening hours. */
+/** Delivery times left today, far enough ahead to cook and deliver, and inside opening hours. */
 export const getTodaySlots = (settings: ShopSettingsDoc, time = new Date()) => {
   const window = todaysWindow(settings, time)
   if (!window) return []
 
   const { minutes } = shopNow(time)
-  const earliest = Math.max(minutes + SLOT_LEAD_MINUTES, window.opens)
+  const earliest = Math.max(minutes + leadMinutes(settings), window.opens)
   const first = Math.ceil(earliest / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES
   const slots: { at: number; label: string }[] = []
 

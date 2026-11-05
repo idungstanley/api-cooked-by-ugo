@@ -62,5 +62,4 @@ export const UNPAID_ORDER_MINUTES = 30
 export const SHOP_TIME_ZONE = 'Europe/London'
 export const MAX_ORDERS_RETURNED = 10_000
 export const ACTIVE_WINDOW_HOURS = 24
-export const SLOT_LEAD_MINUTES = 60
 export const SLOT_STEP_MINUTES = 30

@@ -25,7 +25,8 @@ const send = async ({ to, subject, html }: Email) => {
       htmlContent: html,
     }),
   })
-  if (!response.ok) throw new Error(`Brevo responded ${response.status}`)
+  // Brevo explains rejections, such as an unverified sender, in the body.
+  if (!response.ok) throw new Error(`Brevo responded ${response.status}: ${await response.text()}`)
 }
 
 /** A failed email must never fail the order or action that triggered it. */

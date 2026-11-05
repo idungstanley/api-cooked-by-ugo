@@ -5,10 +5,20 @@ import { baseOptions } from '../../lib/schemaOptions.js'
 
 export type PaymentStatus = 'pending' | 'paid' | 'due' | 'partially-refunded' | 'refunded'
 
+export interface OrderItemOption {
+  groupTitle: string
+  label: string
+  price: number
+}
+
 export interface OrderItemDoc {
   id: string
   productId: string
   name: string
+  /** The dish on its own, before options. Older orders do not have it. */
+  basePrice?: number
+  options: OrderItemOption[]
+  note?: string
   summary?: string
   quantity: number
   unitPrice: number
@@ -27,14 +37,22 @@ export interface OrderDoc {
   allergyNote?: string
   items: OrderItemDoc[]
   subtotal: number
+  discount: number
+  appliedOffers: { offerId: string; name: string; discount: number; freeDelivery: boolean }[]
   deliveryFee: number
   total: number
+  distanceMiles?: number
+  /** Signed-in customers. Guest orders have no account. */
+  accountId?: string
   paymentMethod: 'card' | 'on-delivery'
   paymentStatus: PaymentStatus
   collectedBy?: 'cash' | 'card'
   refundedAmount: number
   scheduledFor?: Date
+  /** Minutes from order to door, for orders wanted as soon as possible. */
   etaMinutes: number
+  /** Time on the road, so the kitchen knows when the food must be ready. */
+  deliveryMinutes: number
   riderId?: string
   status: OrderStatus
   events: { id: string; at: Date; actor: string; message: string }[]
@@ -71,14 +89,23 @@ const schema = new Schema<OrderDoc>(
         id: String,
         productId: String,
         name: String,
+        basePrice: Number,
+        options: [{ _id: false, groupTitle: String, label: String, price: Number }],
+        note: String,
         summary: String,
         quantity: Number,
         unitPrice: Number,
       },
     ],
     subtotal: { type: Number, required: true },
+    discount: { type: Number, default: 0 },
+    appliedOffers: [
+      { _id: false, offerId: String, name: String, discount: Number, freeDelivery: Boolean },
+    ],
     deliveryFee: { type: Number, required: true },
     total: { type: Number, required: true },
+    distanceMiles: Number,
+    accountId: { type: String, index: true, sparse: true },
     paymentMethod: { type: String, enum: ['card', 'on-delivery'], required: true },
     paymentStatus: {
       type: String,
@@ -89,6 +116,7 @@ const schema = new Schema<OrderDoc>(
     refundedAmount: { type: Number, default: 0 },
     scheduledFor: Date,
     etaMinutes: { type: Number, required: true },
+    deliveryMinutes: { type: Number, default: 20 },
     riderId: { type: String, index: true },
     status: { type: String, enum: ORDER_STATUSES, required: true },
     events: [{ _id: false, id: String, at: Date, actor: String, message: String }],

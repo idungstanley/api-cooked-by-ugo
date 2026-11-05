@@ -6,6 +6,22 @@ import { hashPassword } from '../src/modules/auth/auth.routes.js'
 import { Staff } from '../src/modules/staff/staff.model.js'
 import { ShopSettings } from '../src/modules/settings/settings.model.js'
 import { seedCatalog } from '../src/seed/run.js'
+import { rememberPostcode } from '../src/services/postcodes.js'
+
+/** Fixed places, so tests never call postcodes.io. The kitchen sits at NE1 4ST. */
+const MILE_NORTH = 1 / 69
+const placeNorth = (postcode: string, miles: number) =>
+  rememberPostcode({
+    postcode,
+    lat: 54.9713 + miles * MILE_NORTH,
+    lng: -1.6174,
+    city: 'Newcastle upon Tyne',
+  })
+
+placeNorth('NE1 4ST', 0)
+placeNorth('NE3 1DA', 4)
+placeNorth('NE13 6AA', 8)
+rememberPostcode({ postcode: 'SW1A 1AA', lat: 51.501, lng: -0.1416, city: 'Westminster' })
 
 export const PASSWORD = 'correct-horse-battery'
 
@@ -66,11 +82,11 @@ export const orderBody = (overrides: Record<string, unknown> = {}) => ({
   idempotencyKey: `test-order-${(orderCount += 1)}`,
   items: [jollof],
   postcode: 'NE1 4ST',
-  paymentMethod: 'on-delivery',
+  paymentMethod: 'card',
   delivery: {
     fullName: 'Test Customer',
     email: 'customer@example.com',
-    phone: '07700 900123',
+    phone: '07400 123456',
     address: '1 Test Street',
     city: 'Newcastle upon Tyne',
   },

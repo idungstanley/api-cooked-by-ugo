@@ -1,3 +1,5 @@
+import { DEFAULT_KITCHEN, DEFAULT_RADII } from '../modules/settings/settings.model.js'
+
 const hours = (day: number, opensAt: string, closesAt: string) => ({
   day,
   open: true,
@@ -10,18 +12,11 @@ export const seedSettings = {
   ordersPaused: false,
   hours: [1, 2, 3, 4, 5, 6, 0].map((day) => hours(day, '12:00', '20:00')),
   closures: [{ id: 'christmas', date: '2026-12-25', label: 'Christmas Day' }],
-  zones: [
-    { id: 'ne1', prefix: 'NE1', fee: 299, minimumOrder: 1200, active: true },
-    { id: 'ne2', prefix: 'NE2', fee: 299, minimumOrder: 1200, active: true },
-    { id: 'ne3', prefix: 'NE3', fee: 349, minimumOrder: 1500, active: true },
-    { id: 'ne4', prefix: 'NE4', fee: 349, minimumOrder: 1500, active: true },
-    { id: 'ne6', prefix: 'NE6', fee: 399, minimumOrder: 1500, active: false },
-  ],
+  kitchen: { ...DEFAULT_KITCHEN },
+  deliveryRadii: DEFAULT_RADII,
   freeDeliveryThreshold: 2500,
-  etaMinutes: 40,
-  cardEnabled: true,
-  payOnDeliveryEnabled: true,
-  payOnDeliveryLimit: 6000,
+  prepMinutes: 30,
+  deliveryMinutes: 20,
 }
 
 export const seedContent = {

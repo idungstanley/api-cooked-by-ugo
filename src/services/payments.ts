@@ -23,6 +23,13 @@ export const createPaymentIntent = async (
   )
 }
 
+/** A retry of the same order picks up the payment form it already started. */
+export const getPaymentClientSecret = async (paymentIntentId: string) => {
+  if (!stripe) return undefined
+  const intent = await stripe.paymentIntents.retrieve(paymentIntentId)
+  return intent.client_secret ?? undefined
+}
+
 export const refundPayment = async (
   paymentIntentId: string | undefined,
   amount: number,
