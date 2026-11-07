@@ -17,6 +17,7 @@ import { findLiveOffers, offerLabel } from '../offers/offers.model.js'
 import { createReview, publicReviews, reviewInput } from '../reviews/reviews.routes.js'
 import { Review, summariseReviews } from '../reviews/reviews.model.js'
 import { getSettings, leadMinutes, type ShopSettingsDoc } from '../settings/settings.model.js'
+import { changeResponseInput, pendingTopUp, removalRefund, respondToChanges } from './amendments.js'
 import { Order } from './orders.model.js'
 import { orderInput, quoteInput } from './orders.schema.js'
 import { createOrder } from './orders.service.js'
@@ -189,6 +190,28 @@ publicRouter.get('/orders/:id', async (req, res) => {
     total: order.total,
     paymentStatus: order.paymentStatus,
     review: review ? { rating: review.rating, comment: review.comment, reply: review.reply } : null,
+    amendment: order.amendment
+      ? {
+          state: order.amendment.state,
+          unavailableItemIds: order.amendment.unavailableItemIds,
+          message: order.amendment.message,
+          resolution: order.amendment.resolution,
+          topUp: await pendingTopUp(order),
+          removalRefund: await removalRefund(order),
+        }
+      : null,
+  })
+})
+
+/** The customer removes, replaces or cancels after the kitchen ran out of something. */
+publicRouter.post('/orders/:id/changes', orderLimiter, async (req, res) => {
+  const order = await findTrackedOrder(String(req.params.id), req.query)
+  const result = await respondToChanges(order, parse(changeResponseInput, req.body))
+  res.json({
+    status: result.order?.status,
+    total: result.order?.total,
+    clientSecret: 'clientSecret' in result ? result.clientSecret : undefined,
+    extra: 'extra' in result ? result.extra : undefined,
   })
 })
 

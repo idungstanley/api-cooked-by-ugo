@@ -15,7 +15,7 @@ export const phoneNumber = z
     return phone.formatInternational()
   })
 
-const cartItems = z
+export const cartItems = z
   .array(
     z.object({
       productId: z.string().min(1),

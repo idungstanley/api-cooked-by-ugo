@@ -65,13 +65,12 @@ export const quoteDelivery = async (postcode: string, settings: ShopSettingsDoc)
   }
 }
 
-/** The single source of truth for what an order costs. Client totals are display only. */
-export const priceCart = async ({ items, postcode }: QuoteInput, settings: ShopSettingsDoc) => {
+/** Prices basket lines from the database, ignoring anything the client says they cost. */
+export const priceLines = async (items: QuoteInput['items']) => {
   const ids = items.map(({ productId }) => productId)
-  const [dishes, deals, offers] = await Promise.all([
+  const [dishes, deals] = await Promise.all([
     Dish.find({ _id: { $in: ids } }).lean(),
     Deal.find({ _id: { $in: ids } }).lean(),
-    findLiveOffers(),
   ])
   const groupIds = dishes.flatMap(({ optionGroupIds }) => optionGroupIds)
   const groups = new Map(
@@ -79,7 +78,7 @@ export const priceCart = async ({ items, postcode }: QuoteInput, settings: ShopS
   )
   const today = shopNow()
 
-  const priced = items.map(({ productId, quantity, selection, note }, index) => {
+  return items.map(({ productId, quantity, selection, note }, index) => {
     const line = { id: `line-${index + 1}`, productId, quantity, note: note || undefined }
     const dish = dishes.find(({ _id }) => _id === productId)
     if (dish) return { ...line, name: dish.name, ...priceDish(dish, groups, selection) }
@@ -97,7 +96,11 @@ export const priceCart = async ({ items, postcode }: QuoteInput, settings: ShopS
       summary: undefined,
     }
   })
+}
 
+/** The single source of truth for what an order costs. Client totals are display only. */
+export const priceCart = async ({ items, postcode }: QuoteInput, settings: ShopSettingsDoc) => {
+  const [priced, offers] = await Promise.all([priceLines(items), findLiveOffers()])
   const subtotal = priced.reduce((sum, { unitPrice, quantity }) => sum + unitPrice * quantity, 0)
   const offerResult = applyOffers(offers, priced)
   const afterDiscount = subtotal - offerResult.discount

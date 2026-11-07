@@ -24,6 +24,33 @@ export interface OrderItemDoc {
   unitPrice: number
 }
 
+/** One card charge, so refunds can be spread across the original payment and any top-up. */
+export interface OrderPayment {
+  intentId: string
+  amount: number
+  refunded: number
+}
+
+/** The kitchen's request to change an order, and the customer's answer. */
+export interface OrderAmendment {
+  state: 'waiting' | 'awaiting-payment' | 'resolved'
+  unavailableItemIds: string[]
+  message?: string
+  requestedAt: Date
+  requestedBy: string
+  resolution?: 'removed' | 'replaced' | 'cancelled'
+  resolvedAt?: Date
+  /** Replacements that cost more, held until the customer pays the difference. */
+  pending?: {
+    items: OrderItemDoc[]
+    subtotal: number
+    discount: number
+    appliedOffers?: OrderDoc['appliedOffers']
+    total: number
+    intentId: string
+  }
+}
+
 export interface OrderDoc {
   _id: string
   number: string
@@ -58,6 +85,8 @@ export interface OrderDoc {
   events: { id: string; at: Date; actor: string; message: string }[]
   trackingKey: string
   stripePaymentIntentId?: string
+  payments: OrderPayment[]
+  amendment?: OrderAmendment
   idempotencyKey?: string
   reminderSentAt?: Date
   createdAt: Date
@@ -66,6 +95,7 @@ export interface OrderDoc {
 const secretFields = [
   'trackingKey',
   'stripePaymentIntentId',
+  'payments',
   'idempotencyKey',
   'reminderSentAt',
   'updatedAt',
@@ -122,6 +152,34 @@ const schema = new Schema<OrderDoc>(
     events: [{ _id: false, id: String, at: Date, actor: String, message: String }],
     trackingKey: { type: String, required: true },
     stripePaymentIntentId: { type: String, index: true, sparse: true },
+    payments: [{ _id: false, intentId: String, amount: Number, refunded: Number }],
+    amendment: {
+      type: new Schema(
+        {
+          state: { type: String, enum: ['waiting', 'awaiting-payment', 'resolved'] },
+          unavailableItemIds: [String],
+          message: String,
+          requestedAt: Date,
+          requestedBy: String,
+          resolution: { type: String, enum: ['removed', 'replaced', 'cancelled'] },
+          resolvedAt: Date,
+          pending: {
+            type: new Schema(
+              {
+                items: [Schema.Types.Mixed],
+                appliedOffers: [Schema.Types.Mixed],
+                subtotal: Number,
+                discount: Number,
+                total: Number,
+                intentId: { type: String, index: true, sparse: true },
+              },
+              { _id: false },
+            ),
+          },
+        },
+        { _id: false },
+      ),
+    },
     idempotencyKey: { type: String, unique: true, sparse: true },
     reminderSentAt: Date,
   },
@@ -142,6 +200,18 @@ const schema = new Schema<OrderDoc>(
           ...event,
           at: new Date(event.at).getTime(),
         }))
+        const amendment = output.amendment as OrderAmendment | undefined
+        if (amendment) {
+          output.amendment = {
+            state: amendment.state,
+            unavailableItemIds: amendment.unavailableItemIds,
+            message: amendment.message,
+            requestedAt: new Date(amendment.requestedAt).getTime(),
+            requestedBy: amendment.requestedBy,
+            resolution: amendment.resolution,
+            resolvedAt: amendment.resolvedAt && new Date(amendment.resolvedAt).getTime(),
+          }
+        }
         return output
       },
     },

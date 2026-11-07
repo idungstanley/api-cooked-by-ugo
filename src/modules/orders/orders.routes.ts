@@ -13,6 +13,7 @@ import {
   requirePermission,
 } from '../../middleware/auth.js'
 import { parse } from '../../middleware/validate.js'
+import { changeRequestInput, requestChanges } from './amendments.js'
 import { Order } from './orders.model.js'
 import {
   assertCanAccess,
@@ -24,7 +25,12 @@ import {
   updateStatus,
 } from './orders.service.js'
 
-const OPEN_STATUSES: OrderStatus[] = ['received', 'preparing', 'out-for-delivery']
+const OPEN_STATUSES: OrderStatus[] = [
+  'received',
+  'awaiting-customer',
+  'preparing',
+  'out-for-delivery',
+]
 
 const param = (value: string | string[] | undefined) => String(value)
 
@@ -83,6 +89,17 @@ ordersRouter.post(
     res.json(await recordCollection(param(req.params.id), collectedBy, currentStaff(req)))
   },
 )
+
+/** Marks items as out of stock and asks the customer what they would like instead. */
+ordersRouter.post('/:id/changes', requirePermission('orders'), async (req, res) => {
+  res.json(
+    await requestChanges(
+      param(req.params.id),
+      parse(changeRequestInput, req.body),
+      currentStaff(req),
+    ),
+  )
+})
 
 ordersRouter.post('/:id/refund', requirePermission('refunds'), async (req, res) => {
   const { amount, reason } = parse(

@@ -76,3 +76,26 @@ export const emailScheduledReminder = (order: OrderDoc) =>
     `Order ${order.number} is coming up`,
     `<p>Your order will be with you soon.</p>${itemList(order)}`,
   )
+
+/** Sent when the kitchen cannot make something, so the customer can choose what happens next. */
+export const emailChangesNeeded = (order: OrderDoc, unavailable: OrderDoc['items']) =>
+  toCustomer(
+    order,
+    `Order ${order.number} needs your attention`,
+    `<p>Hi ${escapeHtml(order.customerName)}, sorry, we have run out of:</p><ul>${unavailable
+      .map(({ quantity, name }) => `<li>${quantity} × ${escapeHtml(name)}</li>`)
+      .join('')}</ul>${
+      order.amendment?.message ? `<p>${escapeHtml(order.amendment.message)}</p>` : ''
+    }<p>You can remove ${unavailable.length === 1 ? 'it' : 'them'} and get that money back, swap ${
+      unavailable.length === 1 ? 'it' : 'them'
+    } for something else on the same order with no extra delivery fee, or cancel for a full refund.</p><p><a href="${trackingUrl(order)}#update">Update order ${order.number}</a></p><p>We will start cooking as soon as you choose.</p>`,
+  )
+
+export const emailOrderUpdated = (order: OrderDoc, refunded: number) =>
+  toCustomer(
+    order,
+    `Order ${order.number} updated`,
+    `<p>Thanks, your order is updated and Ugo is on it.</p>${itemList(order)}<p>New total: ${money(order.total)}.${
+      refunded > 0 ? ` We have refunded ${money(refunded)} to your card.` : ''
+    }</p><p><a href="${trackingUrl(order)}">Track your order</a></p>`,
+  )

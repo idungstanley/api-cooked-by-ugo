@@ -1,6 +1,7 @@
 import express, { Router } from 'express'
 import { badRequest } from '../../lib/errors.js'
 import { readWebhookEvent } from '../../services/payments.js'
+import { confirmAmendmentPayment } from './amendments.js'
 import { confirmCardPayment } from './orders.service.js'
 
 export const webhookRouter = Router()
@@ -15,7 +16,10 @@ webhookRouter.post('/stripe', express.raw({ type: 'application/json' }), async (
   }
 
   if (event.type === 'payment_intent.succeeded') {
-    await confirmCardPayment(event.data.object.id, event.data.object.amount_received)
+    const { id, amount_received: amount } = event.data.object
+    // Each only acts on its own payments: a new order, or a top-up for replacement items.
+    await confirmCardPayment(id, amount)
+    await confirmAmendmentPayment(id, amount)
   }
   res.json({ received: true })
 })

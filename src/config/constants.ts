@@ -39,6 +39,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 export const ORDER_STATUSES = [
   'pending-payment',
   'received',
+  /** The kitchen marked something unavailable, and the customer is choosing what to do. */
+  'awaiting-customer',
   'preparing',
   'out-for-delivery',
   'delivered',

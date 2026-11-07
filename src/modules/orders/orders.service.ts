@@ -35,13 +35,13 @@ import {
   emailRefund,
   emailScheduledReminder,
 } from './orders.emails.js'
-import { nextOrderNumber, Order, type OrderDoc } from './orders.model.js'
+import { nextOrderNumber, Order, type OrderDoc, type OrderPayment } from './orders.model.js'
 import type { OrderInput } from './orders.schema.js'
 import { priceCart } from './pricing.js'
 
 type OrderRecord = InstanceType<typeof Order>
 
-const event = (actor: string, message: string) => ({
+export const event = (actor: string, message: string) => ({
   id: createId('event'),
   at: new Date(),
   actor,
@@ -178,7 +178,10 @@ export const confirmCardPayment = async (paymentIntentId: string, amountPaid: nu
     {
       status: 'received',
       paymentStatus: 'paid',
-      $push: { events: event('Stripe', 'Card payment confirmed') },
+      $push: {
+        events: event('Stripe', 'Card payment confirmed'),
+        payments: { intentId: paymentIntentId, amount: amountPaid, refunded: 0 },
+      },
     },
     { returnDocument: 'after' },
   )
@@ -298,6 +301,41 @@ export const recordCollection = async (
   return updated
 }
 
+/**
+ * The charges on an order, newest first. Orders paid before top-ups existed have one charge,
+ * worked out from their totals.
+ */
+const chargesOf = (order: OrderDoc): OrderPayment[] => {
+  if (order.payments?.length) return [...order.payments].reverse()
+  return order.stripePaymentIntentId
+    ? [
+        {
+          intentId: order.stripePaymentIntentId,
+          amount: order.total,
+          refunded: order.refundedAmount,
+        },
+      ]
+    : []
+}
+
+/**
+ * Sends `amount` back to the customer's card, taking it from the newest charge first, and
+ * returns the charges with their new refunded totals to save on the order.
+ */
+export const refundAcrossCharges = async (order: OrderDoc, amount: number, key: string) => {
+  const charges = chargesOf(order)
+  let left = amount
+  for (const charge of charges) {
+    const take = Math.min(charge.amount - charge.refunded, left)
+    if (take <= 0) continue
+    await refundPayment(charge.intentId, take, `${key}-${charge.intentId}`)
+    charge.refunded += take
+    left -= take
+  }
+  if (left > 0 && paymentsEnabled) throw new Error('Refund is more than was paid')
+  return charges.reverse()
+}
+
 /** Claims the money in the database first, so a double click can never refund twice. */
 const claimRefund = async (order: OrderRecord, amount: number, extra: object = {}) => {
   const refundedAmount = order.refundedAmount + amount
@@ -327,8 +365,8 @@ export const refundOrder = async (
   if (!claimed) throw conflict('This order was just refunded')
 
   try {
-    await refundPayment(
-      order.stripePaymentIntentId,
+    claimed.payments = await refundAcrossCharges(
+      order,
       amount,
       `refund-${order.id}-${order.refundedAmount}-${amount}`,
     )
@@ -347,21 +385,38 @@ export const refundOrder = async (
   return claimed
 }
 
-export const cancelOrder = async (orderId: string, reason: string, staff: StaffDoc) => {
+/** Staff reject or cancel an order, or the customer cancels instead of changing it. */
+export const cancelOrder = async (
+  orderId: string,
+  reason: string,
+  staff: Pick<StaffDoc, 'name'>,
+) => {
   const order = await findOrder(orderId)
   if (['delivered', 'cancelled'].includes(order.status))
     throw conflict('This order cannot be cancelled')
 
   const refundable = getRefundableAmount(order)
+  let payments = order.payments
   if (refundable > 0) {
     const claimed = await claimRefund(order, refundable)
     if (!claimed) throw conflict('This order was just changed')
-    await refundPayment(order.stripePaymentIntentId, refundable, `cancel-${order.id}`)
+    payments = await refundAcrossCharges(order, refundable, `cancel-${order.id}`)
   }
 
   const cancelled = await Order.findByIdAndUpdate(
     order.id,
-    { status: 'cancelled', $push: { events: event(staff.name, `Order cancelled: ${reason}`) } },
+    {
+      status: 'cancelled',
+      payments,
+      ...(order.amendment && order.amendment.state !== 'resolved'
+        ? {
+            'amendment.state': 'resolved',
+            'amendment.resolution': 'cancelled',
+            'amendment.resolvedAt': new Date(),
+          }
+        : {}),
+      $push: { events: event(staff.name, `Order cancelled: ${reason}`) },
+    },
     { returnDocument: 'after' },
   )
   if (!cancelled) throw notFound('Order')
