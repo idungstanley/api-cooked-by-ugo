@@ -11,7 +11,13 @@ beforeEach(resetDb)
 const signUp = async (email = 'ada@example.com') => {
   const response = await request(app)
     .post('/api/account/signup')
-    .send({ name: 'Ada Obi', email, password: 'jollof-rice-1' })
+    .send({
+      name: 'Ada Obi',
+      email,
+      password: 'jollof-rice-1',
+      phone: '07400 123456',
+      address: { line1: '1 Test Street', city: 'Newcastle upon Tyne', postcode: 'NE1 4ST' },
+    })
     .expect(201)
   return response.body as { token: string; account: { id: string } }
 }
@@ -29,6 +35,8 @@ describe('customer accounts', () => {
         name: 'Someone',
         email: 'ADA@example.com',
         password: 'another-password',
+        phone: '07400 654321',
+        address: { line1: '2 Test Street', city: 'Newcastle upon Tyne', postcode: 'NE1 4ST' },
       })
       .expect(409)
 
@@ -132,6 +140,29 @@ describe('reviews', () => {
 
     const rider = await signIn('rider@test.com')
     await rider.get('/api/reviews').expect(403)
+  })
+})
+
+describe('reviews from other platforms', () => {
+  it('lets staff copy in an Uber Eats review, which the website then shows', async () => {
+    const owner = await signIn('owner@test.com')
+    const created = await owner
+      .post('/api/reviews')
+      .send({
+        displayName: 'Olusegun H',
+        rating: 5,
+        comment: 'Best moimoi in Newcastle.',
+        source: 'Uber Eats',
+        reviewedAt: Date.UTC(2026, 7, 8),
+      })
+      .expect(201)
+
+    const site = await request(app).get('/api/public/reviews').expect(200)
+    expect(site.body.summary).toMatchObject({ average: 5, count: 1 })
+    expect(site.body.reviews[0]).toMatchObject({ displayName: 'Olusegun H', source: 'Uber Eats' })
+    expect(site.body.reviews[0].createdAt).toBe(Date.UTC(2026, 7, 8))
+
+    await owner.delete(`/api/reviews/${created.body.id}`).expect(204)
   })
 })
 

@@ -84,6 +84,28 @@ describe('out of stock items', () => {
     expect(tracked.body).toMatchObject({ subtotal: 1196, deliveryFee: 0, total: 1196 })
   })
 
+  it('takes off just a flagged side, keeping the dish', async () => {
+    const { order, trackingKey } = await placeTwoLineOrder()
+    const kitchen = await signIn('kitchen@test.com')
+    // Line 1 is jollof with Vegetarian, Fried Plantain (+£1.50) and Naija hot: flag the plantain.
+    await kitchen
+      .post(`/api/orders/${order.id}/changes`)
+      .send({ itemIds: ['line-1#1'] })
+      .expect(200)
+
+    const tracked = await track(order.id, trackingKey)
+    expect(tracked.body.amendment.removalRefund).toBe(300)
+    await respond(order.id, trackingKey, { action: 'remove' }).expect(200)
+
+    const updated = await track(order.id, trackingKey)
+    expect(updated.body.items[0]).toMatchObject({
+      name: 'Party Jollof Rice',
+      unitPrice: 1299,
+      summary: 'Vegetarian · Naija hot',
+    })
+    expect(updated.body.total).toBe(order.total - 300)
+  })
+
   it('lets the customer cancel instead, with everything refunded', async () => {
     const { order, trackingKey } = await placeTwoLineOrder()
     await askAboutJollof(order.id)

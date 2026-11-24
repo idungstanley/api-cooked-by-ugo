@@ -45,13 +45,14 @@ export const publicReviews = async (limit: number) =>
     await Review.find({ hidden: false, comment: { $nin: [null, ''] } })
       .sort({ createdAt: -1 })
       .limit(limit)
-  ).map(({ id, displayName, rating, comment, likedItems, reply, createdAt }) => ({
+  ).map(({ id, displayName, rating, comment, likedItems, reply, source, createdAt }) => ({
     id,
     displayName,
     rating,
     comment,
     likedItems,
     reply,
+    source,
     createdAt: createdAt.getTime(),
   }))
 
@@ -73,9 +74,42 @@ reviewsRouter.get('/', async (_req, res) => {
       ...review.toJSON(),
       createdAt: review.createdAt.getTime(),
       repliedAt: review.repliedAt?.getTime(),
-      customerOrders: orderCounts.find(({ _id }) => _id === review.customerId)?.count ?? 1,
+      customerOrders: review.customerId
+        ? (orderCounts.find(({ _id }) => _id === review.customerId)?.count ?? 1)
+        : 0,
     })),
   })
+})
+
+/** Copies a review in from Uber Eats or another platform, so the website can show it. */
+reviewsRouter.post('/', async (req, res) => {
+  const input = parse(
+    z.object({
+      displayName: z.string().trim().min(1).max(60),
+      rating: z.number().int().min(1).max(5),
+      comment: z.string().trim().max(1000).optional(),
+      source: z.string().trim().min(2).max(40),
+      reviewedAt: z.number().int().optional(),
+    }),
+    req.body,
+  )
+  const review = await Review.create({
+    _id: createId('review'),
+    displayName: input.displayName,
+    rating: input.rating,
+    comment: input.comment || undefined,
+    source: input.source,
+    likedItems: [],
+    ...(input.reviewedAt ? { createdAt: new Date(input.reviewedAt) } : {}),
+  })
+  res.status(201).json(review)
+})
+
+/** Only copied-in reviews can be deleted; customers' own reviews can be hidden instead. */
+reviewsRouter.delete('/:id', async (req, res) => {
+  const review = await Review.findOneAndDelete({ _id: req.params.id, orderId: { $exists: false } })
+  if (!review) throw notFound('Review')
+  res.status(204).end()
 })
 
 reviewsRouter.patch('/:id/reply', async (req, res) => {

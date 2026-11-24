@@ -9,6 +9,8 @@ const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().default(4000),
+    /** 127.0.0.1 on the VM, so only the Cloudflare Tunnel can reach the API. */
+    HOST: z.string().default('0.0.0.0'),
     MONGODB_URI: z.string().min(1),
     JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
     ALLOWED_ORIGINS: z.string().default('http://localhost:5173,http://localhost:5174'),
@@ -25,6 +27,11 @@ const schema = z
     IDEAL_POSTCODES_API_KEY: optional,
     /** The customer site, for links in emails such as "rate your order". */
     SITE_URL: z.string().default('http://localhost:5173'),
+    /** Set on the VM, where the API is only reachable through the Cloudflare Tunnel. */
+    TRUST_CLOUDFLARE: z
+      .string()
+      .optional()
+      .transform((value) => value === 'true'),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV !== 'production') return

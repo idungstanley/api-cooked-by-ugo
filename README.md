@@ -79,6 +79,11 @@ staff session, and `requirePermission` checks the role on each route.
 
 ## Going live
 
+The live setup is on Cloudflare, with the API on a VM behind a Cloudflare Tunnel. Follow
+[DEPLOYMENT.md](DEPLOYMENT.md). The notes below cover the earlier Render setup.
+
+### Earlier setup
+
 The live addresses are `cookedbyugo.com` for the customer site, `admin.cookedbyugo.com` for the
 dashboard and `api.cookedbyugo.com` for this API. The session cookie is `SameSite=Lax`, so the
 dashboard and API must share this domain, and staff sign-in fails on an `onrender.com` address.

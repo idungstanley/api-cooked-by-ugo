@@ -78,7 +78,10 @@ export const emailScheduledReminder = (order: OrderDoc) =>
   )
 
 /** Sent when the kitchen cannot make something, so the customer can choose what happens next. */
-export const emailChangesNeeded = (order: OrderDoc, unavailable: OrderDoc['items']) =>
+export const emailChangesNeeded = (
+  order: OrderDoc,
+  unavailable: { quantity: number; name: string }[],
+) =>
   toCustomer(
     order,
     `Order ${order.number} needs your attention`,

@@ -12,7 +12,7 @@ import { Dish } from '../catalog/catalog.model.js'
 import { applyOffers } from '../offers/applyOffers.js'
 import { findLiveOffers } from '../offers/offers.model.js'
 import { emailChangesNeeded, emailOrderUpdated } from './orders.emails.js'
-import { Order, type OrderItemDoc } from './orders.model.js'
+import { Order, type OrderDoc, type OrderItemDoc } from './orders.model.js'
 import { cartItems } from './orders.schema.js'
 import { cancelOrder, event, refundAcrossCharges } from './orders.service.js'
 import { priceLines } from './pricing.js'
@@ -34,6 +34,42 @@ export const changeResponseInput = z.discriminatedUnion('action', [
 
 const CHANGEABLE_STATUSES = ['received', 'preparing']
 
+/** A whole dish is flagged by its line id; one option on it, such as a side, by `line-1#0`. */
+const optionKey = (lineId: string, index: number) => `${lineId}#${index}`
+
+/** Plain copies of the order's lines, safe to change and save back. */
+const plainItems = (order: OrderRecord) => (order.toObject() as OrderDoc).items
+
+/** What is left once flagged dishes and flagged options are taken off, with prices updated. */
+export const keepAvailable = (items: OrderItemDoc[], flagged: string[]) =>
+  items
+    .filter(({ id }) => !flagged.includes(id))
+    .map((item) => {
+      const options = item.options ?? []
+      const remaining = options.filter((_, index) => !flagged.includes(optionKey(item.id, index)))
+      if (remaining.length === options.length) return item
+      const basePrice =
+        item.basePrice ?? item.unitPrice - options.reduce((sum, { price }) => sum + price, 0)
+      return {
+        ...item,
+        basePrice,
+        options: remaining,
+        unitPrice: remaining.reduce((sum, { price }) => sum + price, basePrice),
+        summary: remaining.map(({ label }) => label).join(' · ') || undefined,
+      }
+    })
+
+/** Customer-facing names for what was flagged, such as "Fried Plantain (with Rice and Beans)". */
+export const describeFlagged = (items: OrderItemDoc[], flagged: string[]) =>
+  items.flatMap((item) => [
+    ...(flagged.includes(item.id) ? [{ quantity: item.quantity, name: item.name }] : []),
+    ...(item.options ?? []).flatMap((option, index) =>
+      flagged.includes(optionKey(item.id, index))
+        ? [{ quantity: item.quantity, name: `${option.label} (with ${item.name})` }]
+        : [],
+    ),
+  ])
+
 /**
  * The kitchen marks items it cannot make. The order waits for the customer to remove them,
  * swap them for something else or cancel, all on the same order and delivery fee.
@@ -48,10 +84,18 @@ export const requestChanges = async (
   if (!CHANGEABLE_STATUSES.includes(order.status)) {
     throw conflict('Only new or preparing orders can be changed')
   }
-  const unavailable = order.items.filter(({ id }) => input.itemIds.includes(id))
-  if (unavailable.length !== input.itemIds.length) {
+  const items = plainItems(order)
+  const known = new Set(
+    items.flatMap((item) => [
+      item.id,
+      ...(item.options ?? []).map((_, index) => optionKey(item.id, index)),
+    ]),
+  )
+  if (!input.itemIds.every((id) => known.has(id))) {
     throw unprocessable('Those items are not on this order')
   }
+  const unavailable = describeFlagged(items, input.itemIds)
+  const wholeDishes = items.filter(({ id }) => input.itemIds.includes(id))
 
   const updated = await Order.findOneAndUpdate(
     { _id: order.id, status: order.status },
@@ -77,7 +121,7 @@ export const requestChanges = async (
 
   if (input.markSoldOut) {
     await Dish.updateMany(
-      { _id: { $in: unavailable.map(({ productId }) => productId) } },
+      { _id: { $in: wholeDishes.map(({ productId }) => productId) } },
       { soldOut: true },
     )
   }
@@ -159,7 +203,7 @@ export const respondToChanges = async (
     return { order: await Order.findById(order.id) }
   }
 
-  const kept = order.items.filter(({ id }) => !amendment.unavailableItemIds.includes(id))
+  const kept = keepAvailable(plainItems(order), amendment.unavailableItemIds)
 
   if (input.action === 'remove') {
     if (kept.length === 0) {
@@ -200,7 +244,7 @@ export const respondToChanges = async (
 export const removalRefund = async (order: OrderRecord) => {
   const amendment = order.amendment
   if (!amendment || amendment.state === 'resolved') return null
-  const kept = order.items.filter(({ id }) => !amendment.unavailableItemIds.includes(id))
+  const kept = keepAvailable(plainItems(order), amendment.unavailableItemIds)
   if (kept.length === 0) return order.total
   const change = await repriceOrder(order, kept)
   return Math.max(order.total - change.total, 0)

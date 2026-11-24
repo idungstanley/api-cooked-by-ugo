@@ -370,6 +370,20 @@ describe('delivery radius', () => {
   })
 })
 
+describe('delivering', () => {
+  it('lets the owner take an order out themselves when no rider is free', async () => {
+    const { order } = await placeOrder()
+    const owner = await signIn('owner@test.com')
+    await owner.patch(`/api/orders/${order.id}/status`).send({ status: 'preparing' }).expect(200)
+    await owner.patch(`/api/orders/${order.id}/rider`).send({ riderId: 'owner' }).expect(200)
+    const out = await owner
+      .patch(`/api/orders/${order.id}/status`)
+      .send({ status: 'out-for-delivery' })
+      .expect(200)
+    expect(out.body.riderId).toBe('owner')
+  })
+})
+
 describe('timing', () => {
   it('sets the arrival time from preparation plus delivery time', async () => {
     await ShopSettings.updateOne({}, { prepMinutes: 60, deliveryMinutes: 25 })

@@ -255,9 +255,10 @@ export const updateStatus = async (orderId: string, status: OrderStatus, staff: 
   return updated
 }
 
+/** Usually a rider, but any active staff member can take an order out themselves. */
 export const assignRider = async (orderId: string, riderId: string, staff: StaffDoc) => {
-  const rider = await Staff.findOne({ _id: riderId, role: 'rider', active: true })
-  if (!rider) throw badRequest('Choose an active rider')
+  const rider = await Staff.findOne({ _id: riderId, active: true })
+  if (!rider) throw badRequest('Choose who is delivering this order')
 
   const order = await findOrder(orderId)
   order.riderId = rider.id

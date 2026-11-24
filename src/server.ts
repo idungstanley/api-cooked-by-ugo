@@ -11,7 +11,7 @@ const server = createServer(createApp())
 startRealtime(server)
 const jobs = startJobs()
 
-server.listen(env.PORT, () => console.log(`API running on port ${env.PORT}`))
+server.listen(env.PORT, env.HOST, () => console.log(`API running on ${env.HOST}:${env.PORT}`))
 
 const stop = () => {
   clearInterval(jobs)

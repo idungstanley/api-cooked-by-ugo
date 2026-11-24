@@ -22,6 +22,7 @@ import { UPLOADS_DIR, uploadsRouter } from './modules/uploads/uploads.routes.js'
 
 export const createApp = () => {
   const app = express()
+  // One proxy in front: Render's load balancer, or cloudflared on the VM.
   if (isProduction) app.set('trust proxy', 1)
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))

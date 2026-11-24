@@ -3,10 +3,13 @@ import { baseOptions } from '../../lib/schemaOptions.js'
 
 export interface ReviewDoc {
   _id: string
-  orderId: string
+  /** Missing for reviews copied in from another platform. */
+  orderId?: string
+  /** Where the review was left, such as "Uber Eats". Website reviews have none. */
+  source?: string
   orderNumber: string
   orderTotal: number
-  customerId: string
+  customerId?: string
   accountId?: string
   /** First name and initial, which is all the public site shows. */
   displayName: string
@@ -24,7 +27,8 @@ export interface ReviewDoc {
 const schema = new Schema<ReviewDoc>(
   {
     _id: { type: String, required: true },
-    orderId: { type: String, required: true, unique: true },
+    orderId: { type: String, unique: true, sparse: true },
+    source: String,
     orderNumber: String,
     orderTotal: Number,
     customerId: { type: String, index: true },
