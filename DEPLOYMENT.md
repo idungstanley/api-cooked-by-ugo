@@ -4,11 +4,11 @@ This follows Nicholas's Cloudflare guide, adapted to how the apps are built. The
 the admin are static Vite apps, so both run on Cloudflare Workers for free. Only the API needs a
 server: it runs on the free Oracle VM, reachable only through a Cloudflare Tunnel.
 
-| Address                  | What                          | Where                                    |
-| ------------------------ | ----------------------------- | ---------------------------------------- |
-| `cookedbyugo.com`, `www` | Customer site (`cook-by-ugo`) | Cloudflare Workers                       |
-| `admin.cookedbyugo.com`  | Admin (`admin-cook-by-ugo`)   | Cloudflare Workers, behind Access        |
-| `api.cookedbyugo.com`    | API (this repo)               | Oracle VM, port 3001, through the tunnel |
+| Address                  | What                                   | Where                                    |
+| ------------------------ | -------------------------------------- | ---------------------------------------- |
+| `cookedbyugo.com`, `www` | Customer site (`CookedByUgo/frontend`) | Cloudflare Workers                       |
+| `admin.cookedbyugo.com`  | Admin (`CookedByUgo/api-admin`)        | Cloudflare Workers, behind Access        |
+| `api.cookedbyugo.com`    | API (`CookedByUgo/api-monolith`)       | Oracle VM, port 3001, through the tunnel |
 
 Pushing to `main` deploys all three: Cloudflare rebuilds the two sites, and the VM pulls the API
 within a minute. GitHub Actions runs the lint, type checks and tests on every push.
@@ -20,7 +20,8 @@ on **Always Use HTTPS**.
 
 ## 2. The two sites on Workers
 
-Do this once for `cook-by-ugo` and once for `admin-cook-by-ugo`.
+Do this once for `CookedByUgo/frontend` (the customer site) and once for `CookedByUgo/api-admin`
+(the admin).
 
 1. **Workers & Pages → Create → Import a repository**, and pick the repo.
 2. Build command: `npm run build`. Deploy command: `npx wrangler deploy`.
@@ -42,8 +43,10 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs git
 sudo npm install -g pm2
 
-git clone https://github.com/idungstanley/api-cooked-by-ugo.git
-cd api-cooked-by-ugo
+# The repo is private: add the VM's SSH key as a read-only deploy key on
+# github.com/CookedByUgo/api-monolith → Settings → Deploy keys first.
+git clone git@github.com:CookedByUgo/api-monolith.git
+cd api-monolith
 cp .env.example .env   # then fill it in, see below
 npm ci --include=dev && npm run build
 pm2 start ecosystem.config.cjs
@@ -78,7 +81,7 @@ CLOUDINARY_URL=...
 `main` has changed it builds and restarts the API. A failed build leaves the running version alone.
 
 ```
-* * * * * /home/ubuntu/api-cooked-by-ugo/scripts/auto-deploy.sh >> /home/ubuntu/deploy.log 2>&1
+* * * * * /home/ubuntu/api-monolith/scripts/auto-deploy.sh >> /home/ubuntu/deploy.log 2>&1
 ```
 
 **Firewall.** Allow no inbound ports except SSH from your own IP. The tunnel and the deploy script
