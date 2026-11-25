@@ -2,16 +2,17 @@
 
 This follows Nicholas's Cloudflare guide, adapted to how the apps are built. The customer site and
 the admin are static Vite apps, so both run on Cloudflare Workers for free. Only the API needs a
-server: it runs on the free Oracle VM, reachable only through a Cloudflare Tunnel.
+server: it runs as a Node.js app on the Namecheap cPanel hosting, behind Cloudflare. The Oracle VM
+setup in section 3 is the alternative if the shared hosting ever falls short.
 
-| Address                  | What                                   | Where                                    |
-| ------------------------ | -------------------------------------- | ---------------------------------------- |
-| `cookedbyugo.com`, `www` | Customer site (`CookedByUgo/frontend`) | Cloudflare Workers                       |
-| `admin.cookedbyugo.com`  | Admin (`CookedByUgo/api-admin`)        | Cloudflare Workers, behind Access        |
-| `api.cookedbyugo.com`    | API (`CookedByUgo/api-monolith`)       | Oracle VM, port 3001, through the tunnel |
+| Address                     | What                                   | Where                               |
+| --------------------------- | -------------------------------------- | ----------------------------------- |
+| `cookedbyugo.com`, `www`    | Customer site (`CookedByUgo/frontend`) | Cloudflare Workers                  |
+| `adminuser.cookedbyugo.com` | Admin (`CookedByUgo/api-admin`)        | Cloudflare Workers, behind Access   |
+| `apiuser.cookedbyugo.com`   | API (`CookedByUgo/api-monolith`)       | Namecheap cPanel, Setup Node.js App |
 
-Pushing to `main` deploys all three: Cloudflare rebuilds the two sites, and the VM pulls the API
-within a minute. GitHub Actions runs the lint, type checks and tests on every push.
+Pushing to `main` rebuilds the two sites on Cloudflare. The API on cPanel is updated by hand, as
+described in "The API on cPanel" below. GitHub Actions runs the lint, type checks and tests on every push.
 
 ## 1. DNS (done)
 
@@ -25,15 +26,32 @@ Do this once for `CookedByUgo/frontend` (the customer site) and once for `Cooked
 
 1. **Workers & Pages → Create → Import a repository**, and pick the repo.
 2. Build command: `npm run build`. Deploy command: `npx wrangler deploy`.
-3. Build variable: `VITE_API_URL=https://api.cookedbyugo.com`. It is baked in at build time, so
+3. Build variable: `VITE_API_URL=https://apiuser.cookedbyugo.com`. It is baked in at build time, so
    redeploy after changing it.
 4. After the first deploy, **Settings → Domains & Routes → Add custom domain**: `cookedbyugo.com`
-   and `www.cookedbyugo.com` for the site, `admin.cookedbyugo.com` for the admin.
+   and `www.cookedbyugo.com` for the site, `adminuser.cookedbyugo.com` for the admin.
 
 Each repo has a `wrangler.jsonc` that serves `dist` and sends unknown paths to `index.html`, and a
 `public/_headers` file with security headers. `npm run preview:cloudflare` runs it locally.
 
-## 3. The API on the VM
+## The API on cPanel (current)
+
+The app lives in cPanel → **Setup Node.js App** → `apiuser.cookedbyugo.com`: Node 24, production
+mode, application root `cookedbyugo-api`, startup file `app.cjs`. `app.cjs` loads the built server
+from `dist`, because cPanel's runner only loads CommonJS files.
+
+To release a new version:
+
+1. On a computer with the repo: `npm ci && npm run build`, then zip `dist`, `package.json`,
+   `package-lock.json` and `app.cjs`.
+2. In cPanel **File Manager**, upload the zip into `cookedbyugo-api` and extract it, replacing files.
+3. In **Setup Node.js App**, click **Run NPM Install** if dependencies changed, then **Restart**.
+
+Its settings are the app's environment variables, listed in the `.env` example below, except
+`HOST` and `PORT`, which cPanel handles. If it shows a 503, read `stderr.log` in the app folder.
+MongoDB Atlas must allow the hosting server's IP, `185.61.152.45`.
+
+## 3. The API on a VM (alternative)
 
 On the Oracle VM (Ubuntu, Ampere):
 
@@ -62,8 +80,8 @@ HOST=127.0.0.1
 TRUST_CLOUDFLARE=true
 MONGODB_URI=...
 JWT_SECRET=...            # openssl rand -base64 48
-ALLOWED_ORIGINS=https://cookedbyugo.com,https://www.cookedbyugo.com,https://admin.cookedbyugo.com
-ADMIN_URL=https://admin.cookedbyugo.com
+ALLOWED_ORIGINS=https://cookedbyugo.com,https://www.cookedbyugo.com,https://adminuser.cookedbyugo.com
+ADMIN_URL=https://adminuser.cookedbyugo.com
 SITE_URL=https://cookedbyugo.com
 STRIPE_SECRET_KEY=...
 STRIPE_PUBLISHABLE_KEY=...
@@ -98,7 +116,7 @@ The admin does not need the tunnel: it is a static site on Workers that talks to
 ## 5. Lock the admin with Cloudflare Access
 
 1. **Zero Trust → Access → Applications → Add an application → Self-hosted**.
-2. Domain: `admin.cookedbyugo.com`.
+2. Domain: `adminuser.cookedbyugo.com`.
 3. Policy: **Allow**, including only the approved staff emails.
 4. Login method: one-time PIN by email, or Google.
 
@@ -108,7 +126,7 @@ Staff then pass Access and the admin's own sign-in, with two-factor for the owne
 
 - **Atlas → Network Access:** add the VM's public IP, then remove `0.0.0.0/0`.
 - **Stripe → Developers → Webhooks → Add endpoint:**
-  `https://api.cookedbyugo.com/api/webhooks/stripe`, with the event `payment_intent.succeeded`.
+  `https://apiuser.cookedbyugo.com/api/webhooks/stripe`, with the event `payment_intent.succeeded`.
   Copy its signing secret into `STRIPE_WEBHOOK_SECRET`. This app takes payment with Stripe's
   payment form (Payment Intents), not hosted Checkout, so the guide's `checkout.session.completed`
   event and success or cancel URLs do not apply.
@@ -123,8 +141,8 @@ Staff then pass Access and the admin's own sign-in, with two-factor for the owne
 
 - [ ] Cloudflare shows the domain as Active, with Full (strict) TLS
 - [ ] `cookedbyugo.com` and `www` load the site over HTTPS
-- [ ] `https://api.cookedbyugo.com/health` returns `{"status":"ok"}`
-- [ ] `admin.cookedbyugo.com` asks for the Cloudflare Access login first
+- [ ] `https://apiuser.cookedbyugo.com/health` returns `{"status":"ok"}`
+- [ ] `adminuser.cookedbyugo.com` asks for the Cloudflare Access login first
 - [ ] Atlas allows only the VM's IP
 - [ ] The Stripe webhook is live and its secret is on the VM
 - [ ] A real £1–£2 order completes, shows in the admin, and is refunded from the admin

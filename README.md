@@ -84,15 +84,15 @@ The live setup is on Cloudflare, with the API on a VM behind a Cloudflare Tunnel
 
 ### Earlier setup
 
-The live addresses are `cookedbyugo.com` for the customer site, `admin.cookedbyugo.com` for the
-dashboard and `api.cookedbyugo.com` for this API. The session cookie is `SameSite=Lax`, so the
+The live addresses are `cookedbyugo.com` for the customer site, `adminuser.cookedbyugo.com` for the
+dashboard and `apiuser.cookedbyugo.com` for this API. The session cookie is `SameSite=Lax`, so the
 dashboard and API must share this domain, and staff sign-in fails on an `onrender.com` address.
 
 1. Create a MongoDB Atlas cluster, and allow the API host's outbound IP addresses.
 2. Set every value in `.env.example` except `SEED_PASSWORD`, with `NODE_ENV=production`. The API
    refuses to start if a required key is missing.
 3. Set `ALLOWED_ORIGINS` to the live website addresses.
-4. Add a Stripe webhook to `https://api.cookedbyugo.com/api/webhooks/stripe` for
+4. Add a Stripe webhook to `https://apiuser.cookedbyugo.com/api/webhooks/stripe` for
    `payment_intent.succeeded`, and set `STRIPE_PUBLISHABLE_KEY` so checkout can show the card form.
    Every order is paid by card at checkout. For Apple Pay, verify the website's domain in Stripe.
 5. Authenticate `cookedbyugo.com` in Brevo, with SPF, DKIM and DMARC.
