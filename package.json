@@ -12,6 +12,7 @@
     "dev": "tsx watch --env-file=.env src/server.ts",
     "seed": "tsx --env-file-if-exists=.env src/seed/run.ts",
     "create-owner": "tsx --env-file-if-exists=.env src/seed/create-owner.ts",
+    "create-owner:live": "node --env-file-if-exists=.env dist/seed/create-owner.js",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "lint": "eslint .",

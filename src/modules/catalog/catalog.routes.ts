@@ -1,10 +1,29 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { notFound } from '../../lib/errors.js'
+import { conflict, notFound } from '../../lib/errors.js'
 import { createId } from '../../lib/ids.js'
 import { requireAuth, requirePermission } from '../../middleware/auth.js'
 import { parse } from '../../middleware/validate.js'
 import { Category, Dish, OptionGroup } from './catalog.model.js'
+
+const categoryInput = z.object({
+  name: z.string().trim().min(2).max(40),
+  // The short name fits the menu's category tabs on a phone.
+  shortName: z.string().trim().max(16).optional(),
+  accent: z.enum(['jollof', 'ewedu', 'indigo', 'gold']).default('jollof'),
+})
+
+/** Readable ids, like `small-chops`, because the shop uses them in menu links. */
+const categoryId = async (name: string) => {
+  const slug =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'category'
+  let id = slug
+  for (let n = 2; await Category.exists({ _id: id }); n += 1) id = `${slug}-${n}`
+  return id
+}
 
 /** Only the name, category and price are needed, so a dish can go live quickly. */
 const dishInput = z.object({
@@ -56,6 +75,60 @@ catalogRouter.use(requireAuth)
 
 catalogRouter.get('/categories', requirePermission('menu'), async (_req, res) => {
   res.json(await Category.find().sort({ sortOrder: 1 }))
+})
+
+catalogRouter.post('/categories', requirePermission('menu.edit'), async (req, res) => {
+  const { name, shortName, accent } = parse(categoryInput, req.body)
+  const last = await Category.findOne().sort({ sortOrder: -1 })
+  const category = await Category.create({
+    _id: await categoryId(name),
+    name,
+    shortName: shortName || name,
+    accent,
+    sortOrder: (last?.sortOrder ?? 0) + 1,
+  })
+  res.status(201).json(category)
+})
+
+catalogRouter.put('/categories/:id', requirePermission('menu.edit'), async (req, res) => {
+  const { name, shortName, accent } = parse(categoryInput, req.body)
+  const category = await Category.findByIdAndUpdate(
+    req.params.id,
+    { name, shortName: shortName || name, accent },
+    { returnDocument: 'after', runValidators: true },
+  )
+  if (!category) throw notFound('Category')
+  res.json(category)
+})
+
+catalogRouter.delete('/categories/:id', requirePermission('menu.edit'), async (req, res) => {
+  const dishes = await Dish.countDocuments({ categoryId: req.params.id })
+  if (dishes > 0)
+    throw conflict(`Move or delete the ${dishes} dish${dishes === 1 ? '' : 'es'} in it first`)
+  const category = await Category.findByIdAndDelete(req.params.id)
+  if (!category) throw notFound('Category')
+  res.status(204).end()
+})
+
+catalogRouter.post('/categories/:id/move', requirePermission('menu.edit'), async (req, res) => {
+  const { direction } = parse(
+    z.object({ direction: z.union([z.literal(-1), z.literal(1)]) }),
+    req.body,
+  )
+  const category = await Category.findById(req.params.id)
+  if (!category) throw notFound('Category')
+
+  const neighbour = await Category.findOne({
+    sortOrder: direction === -1 ? { $lt: category.sortOrder } : { $gt: category.sortOrder },
+  }).sort({ sortOrder: direction === -1 ? -1 : 1 })
+
+  if (neighbour) {
+    const { sortOrder } = category
+    category.sortOrder = neighbour.sortOrder
+    neighbour.sortOrder = sortOrder
+    await Promise.all([category.save(), neighbour.save()])
+  }
+  res.status(204).end()
 })
 
 catalogRouter.get('/dishes', requirePermission('menu'), async (_req, res) => {
