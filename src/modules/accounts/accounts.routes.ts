@@ -8,6 +8,7 @@ import { createId, createSecret } from '../../lib/ids.js'
 import { authLimiter } from '../../middleware/rateLimit.js'
 import { parse } from '../../middleware/validate.js'
 import { escapeHtml, sendEmail } from '../../services/email.js'
+import { button, layout, paragraph } from '../../services/emailLayout.js'
 import { hashPassword } from '../auth/auth.routes.js'
 import { hashToken } from '../auth/auth.tokens.js'
 import { phoneNumber } from '../orders/orders.schema.js'
@@ -29,6 +30,40 @@ const address = z.object({
   city: z.string().trim().min(2).max(100),
   postcode: z.string().trim().min(5).max(10),
 })
+
+/** Emails a link that proves the customer owns the address. */
+const sendVerification = async (account: InstanceType<typeof Account>) => {
+  const token = createSecret()
+  account.verifyTokenHash = hashToken(token)
+  await account.save()
+  sendEmail({
+    to: account.email,
+    subject: 'Confirm your email for Cooked by Ugo',
+    html: layout({
+      heading: 'Confirm your email',
+      preview: 'One tap to finish setting up your account',
+      body: `${paragraph(`Hi ${escapeHtml(account.name)}, welcome to Cooked by Ugo.`)}${paragraph(
+        'Confirm your email so we can show every order you place with it, including any you placed before you signed up.',
+      )}${button('Confirm my email', `${env.SITE_URL}/account/verify-email?token=${token}`)}${paragraph(
+        'If you did not create this account, you can ignore this email.',
+      )}`,
+    }),
+  })
+}
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&')
+
+/** Gives a verified account the guest orders placed with the same email, in any letter case. */
+const claimGuestOrders = async (account: InstanceType<typeof Account>) => {
+  if (!account.emailVerifiedAt) return
+  await Order.updateMany(
+    {
+      accountId: { $exists: false },
+      customerEmail: new RegExp(`^${escapeRegex(account.email)}$`, 'i'),
+    },
+    { accountId: account.id },
+  )
+}
 
 const sendSession = (res: Response, account: InstanceType<typeof Account>, status = 200) =>
   res.status(status).json({ account, token: signAccountSession(account.id, account.tokenVersion) })
@@ -55,6 +90,7 @@ accountsRouter.post('/signup', authLimiter, async (req, res) => {
     if (isDuplicateKey(error)) throw conflict('That email already has an account. Please sign in.')
     throw error
   })
+  await sendVerification(account)
   sendSession(res, account, 201)
 })
 
@@ -94,8 +130,28 @@ accountsRouter.patch('/me', requireAccount, async (req, res) => {
   res.json(account)
 })
 
+/** Opened from the confirmation email. */
+accountsRouter.post('/verify-email', authLimiter, async (req, res) => {
+  const input = parse(z.object({ token: z.string().min(10) }), req.body)
+  const account = await Account.findOne({ verifyTokenHash: hashToken(input.token) })
+  if (!account) throw unauthorised('This link has expired. Please ask for a new one.')
+  account.emailVerifiedAt = account.emailVerifiedAt ?? new Date()
+  account.verifyTokenHash = undefined
+  await account.save()
+  await claimGuestOrders(account)
+  res.json(account)
+})
+
+accountsRouter.post('/resend-verification', requireAccount, authLimiter, async (req, res) => {
+  const account = currentAccount(req)
+  if (!account.emailVerifiedAt) await sendVerification(account)
+  res.json({ ok: true })
+})
+
 accountsRouter.get('/orders', requireAccount, async (req, res) => {
   const account = currentAccount(req)
+  // Guest orders placed since the customer verified are picked up here too.
+  await claimGuestOrders(account)
   const orders = await Order.find({ accountId: account.id, status: { $ne: 'pending-payment' } })
     .sort({ createdAt: -1 })
     .limit(ORDERS_SHOWN)
@@ -125,7 +181,16 @@ accountsRouter.post('/forgot-password', authLimiter, async (req, res) => {
     sendEmail({
       to: account.email,
       subject: 'Reset your Cooked by Ugo password',
-      html: `<p>Hi ${escapeHtml(account.name)},</p><p><a href="${env.SITE_URL}/account/reset-password?token=${token}">Choose a new password</a>. The link works for ${RESET_TOKEN_HOURS} hours.</p><p>If you did not ask for this, you can ignore this email.</p>`,
+      html: layout({
+        heading: 'Reset your password',
+        preview: `The link works for ${RESET_TOKEN_HOURS} hours`,
+        body: `${paragraph(`Hi ${escapeHtml(account.name)},`)}${button(
+          'Choose a new password',
+          `${env.SITE_URL}/account/reset-password?token=${token}`,
+        )}${paragraph(
+          `The link works for ${RESET_TOKEN_HOURS} hours. If you did not ask for this, you can ignore this email.`,
+        )}`,
+      }),
     })
   }
   res.json({ ok: true })
@@ -143,6 +208,9 @@ accountsRouter.post('/reset-password', authLimiter, async (req, res) => {
   account.resetTokenHash = undefined
   account.resetTokenExpires = undefined
   account.tokenVersion += 1
+  // The reset link arrived by email, which proves the customer owns the address.
+  account.emailVerifiedAt = account.emailVerifiedAt ?? new Date()
   await account.save()
+  await claimGuestOrders(account)
   sendSession(res, account)
 })

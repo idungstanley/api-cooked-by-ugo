@@ -34,7 +34,8 @@ const settingsInput = z.object({
       }),
     )
     .min(1, 'Add at least one delivery radius'),
-  freeDeliveryThreshold: pence,
+  // Blank turns free delivery off. Offers can still give free delivery.
+  freeDeliveryThreshold: pence.nullable().default(null),
   prepMinutes: z.number().int().min(5).max(240),
   deliveryMinutes: z.number().int().min(5).max(180),
 })

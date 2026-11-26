@@ -190,6 +190,7 @@ publicRouter.get('/orders/:id', async (req, res) => {
     deliveryFee: order.deliveryFee,
     total: order.total,
     paymentStatus: order.paymentStatus,
+    refundedAmount: order.refundedAmount,
     review: review ? { rating: review.rating, comment: review.comment, reply: review.reply } : null,
     amendment: order.amendment
       ? {

@@ -18,7 +18,8 @@ export interface ShopSettingsDoc {
   closures: { id: string; date: string; label: string }[]
   kitchen: { postcode: string; lat: number; lng: number }
   deliveryRadii: DeliveryRadius[]
-  freeDeliveryThreshold: number
+  /** Null when the shop does not offer free delivery over an amount. */
+  freeDeliveryThreshold: number | null
   /** Average time to cook an order, like the preparation time on Uber Eats. */
   prepMinutes: number
   /** Average time on the road from the kitchen to the door. */
@@ -61,7 +62,7 @@ export const ShopSettings = model<ShopSettingsDoc>(
         ],
         default: () => DEFAULT_RADII.map((radius) => ({ ...radius })),
       },
-      freeDeliveryThreshold: { type: Number, default: 2500 },
+      freeDeliveryThreshold: { type: Number, default: null },
       prepMinutes: { type: Number, default: 30 },
       deliveryMinutes: { type: Number, default: 20 },
     },

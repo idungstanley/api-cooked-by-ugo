@@ -17,12 +17,21 @@ export interface AccountDoc {
   phone?: string
   address?: SavedAddress
   marketingOptIn: boolean
+  /** Set once the customer proves they own the email, which links their guest orders. */
+  emailVerifiedAt?: Date
+  verifyTokenHash?: string
   tokenVersion: number
   resetTokenHash?: string
   resetTokenExpires?: Date
 }
 
-const hiddenFields = ['passwordHash', 'tokenVersion', 'resetTokenHash', 'resetTokenExpires']
+const hiddenFields = [
+  'passwordHash',
+  'tokenVersion',
+  'resetTokenHash',
+  'resetTokenExpires',
+  'verifyTokenHash',
+]
 
 export const Account = model<AccountDoc>(
   'Account',
@@ -35,6 +44,8 @@ export const Account = model<AccountDoc>(
       phone: String,
       address: { _id: false, line1: String, line2: String, city: String, postcode: String },
       marketingOptIn: { type: Boolean, default: false },
+      emailVerifiedAt: Date,
+      verifyTokenHash: { type: String, index: true, sparse: true },
       tokenVersion: { type: Number, default: 0 },
       resetTokenHash: { type: String, index: true, sparse: true },
       resetTokenExpires: Date,

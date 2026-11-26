@@ -14,7 +14,7 @@ export const seedSettings = {
   closures: [{ id: 'christmas', date: '2026-12-25', label: 'Christmas Day' }],
   kitchen: { ...DEFAULT_KITCHEN },
   deliveryRadii: DEFAULT_RADII,
-  freeDeliveryThreshold: 2500,
+  freeDeliveryThreshold: null,
   prepMinutes: 30,
   deliveryMinutes: 20,
 }

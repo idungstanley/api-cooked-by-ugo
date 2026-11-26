@@ -47,6 +47,8 @@ export const resetDb = async () => {
   await ShopSettings.updateOne(
     {},
     {
+      // The pricing tests cover free delivery over £25.
+      freeDeliveryThreshold: 2500,
       hours: [0, 1, 2, 3, 4, 5, 6].map((day) => ({
         day,
         open: true,

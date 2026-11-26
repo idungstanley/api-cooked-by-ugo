@@ -126,6 +126,9 @@ export const priceCart = async ({ items, postcode }: QuoteInput, settings: ShopS
   }
 
   const deliveryFee =
-    offerResult.freeDelivery || afterDiscount >= settings.freeDeliveryThreshold ? 0 : delivery.fee
+    offerResult.freeDelivery ||
+    (settings.freeDeliveryThreshold != null && afterDiscount >= settings.freeDeliveryThreshold)
+      ? 0
+      : delivery.fee
   return { ...base, deliveryFee, total: afterDiscount + deliveryFee, delivery }
 }
