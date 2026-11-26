@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { Category } from '../src/modules/catalog/catalog.model.js'
-import { resetDb, signIn, startDb, stopDb } from './helpers.js'
+import request from 'supertest'
+import { app, resetDb, signIn, startDb, stopDb } from './helpers.js'
 
 beforeAll(startDb)
 afterAll(stopDb)
@@ -30,8 +31,21 @@ describe('menu categories', () => {
 
     const renamed = await owner
       .put(`/api/catalog/categories/${body.id}`)
-      .send({ name: 'Soups and Swallow', shortName: 'Soups', accent: 'ewedu' })
-    expect(renamed.body).toMatchObject({ name: 'Soups and Swallow', shortName: 'Soups' })
+      .send({
+        name: 'Soups and Swallow',
+        shortName: 'Soups',
+        accent: 'ewedu',
+        notes: 'Weekends only',
+      })
+    expect(renamed.body).toMatchObject({
+      name: 'Soups and Swallow',
+      shortName: 'Soups',
+      notes: 'Weekends only',
+    })
+    const shown = await request(app).get('/api/public/categories')
+    const soups = shown.body.find(({ id }: { id: string }) => id === body.id)
+    expect(soups.name).toBe('Soups and Swallow')
+    expect(soups).not.toHaveProperty('notes')
 
     const before = (await Category.findById(body.id))!.sortOrder
     await owner.post(`/api/catalog/categories/${body.id}/move`).send({ direction: -1 }).expect(204)

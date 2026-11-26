@@ -8,9 +8,11 @@ import { Category, Dish, OptionGroup } from './catalog.model.js'
 
 const categoryInput = z.object({
   name: z.string().trim().min(2).max(40),
-  // The short name fits the menu's category tabs on a phone.
+  // The admin only asks for a name and notes. The shop's tabs fall back to the name, and
+  // the colour keeps whatever it had (new categories start in jollof red).
   shortName: z.string().trim().max(16).optional(),
-  accent: z.enum(['jollof', 'ewedu', 'indigo', 'gold']).default('jollof'),
+  accent: z.enum(['jollof', 'ewedu', 'indigo', 'gold']).optional(),
+  notes: z.string().trim().max(500).default(''),
 })
 
 /** Readable ids, like `small-chops`, because the shop uses them in menu links. */
@@ -78,23 +80,24 @@ catalogRouter.get('/categories', requirePermission('menu'), async (_req, res) =>
 })
 
 catalogRouter.post('/categories', requirePermission('menu.edit'), async (req, res) => {
-  const { name, shortName, accent } = parse(categoryInput, req.body)
+  const { name, shortName, accent, notes } = parse(categoryInput, req.body)
   const last = await Category.findOne().sort({ sortOrder: -1 })
   const category = await Category.create({
     _id: await categoryId(name),
     name,
     shortName: shortName || name,
-    accent,
+    accent: accent ?? 'jollof',
+    notes,
     sortOrder: (last?.sortOrder ?? 0) + 1,
   })
   res.status(201).json(category)
 })
 
 catalogRouter.put('/categories/:id', requirePermission('menu.edit'), async (req, res) => {
-  const { name, shortName, accent } = parse(categoryInput, req.body)
+  const { name, shortName, accent, notes } = parse(categoryInput, req.body)
   const category = await Category.findByIdAndUpdate(
     req.params.id,
-    { name, shortName: shortName || name, accent },
+    { name, shortName: shortName || name, notes, ...(accent ? { accent } : {}) },
     { returnDocument: 'after', runValidators: true },
   )
   if (!category) throw notFound('Category')

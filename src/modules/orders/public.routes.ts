@@ -58,7 +58,8 @@ const groupHours = (settings: ShopSettingsDoc) => {
 export const publicRouter = Router()
 
 publicRouter.get('/categories', async (_req, res) => {
-  res.json(await Category.find().sort({ sortOrder: 1 }))
+  // Notes are for staff, so they stay out of the public menu.
+  res.json(await Category.find().select('-notes').sort({ sortOrder: 1 }))
 })
 
 publicRouter.get('/dishes', async (_req, res) => {

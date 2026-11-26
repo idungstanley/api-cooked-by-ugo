@@ -6,6 +6,8 @@ export interface CategoryDoc {
   name: string
   shortName: string
   accent: string
+  /** For staff only. The public menu never sends it. */
+  notes: string
   sortOrder: number
 }
 
@@ -56,6 +58,7 @@ export const Category = model<CategoryDoc>(
       name: { type: String, required: true },
       shortName: { type: String, required: true },
       accent: { type: String, required: true },
+      notes: { type: String, default: '' },
       sortOrder: { type: Number, default: 0 },
     },
     baseOptions,
