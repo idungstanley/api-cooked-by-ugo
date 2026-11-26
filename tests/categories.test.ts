@@ -29,14 +29,12 @@ describe('menu categories', () => {
     const owner = await signIn('owner@test.com')
     const { body } = await owner.post('/api/catalog/categories').send({ name: 'Soups' })
 
-    const renamed = await owner
-      .put(`/api/catalog/categories/${body.id}`)
-      .send({
-        name: 'Soups and Swallow',
-        shortName: 'Soups',
-        accent: 'ewedu',
-        notes: 'Weekends only',
-      })
+    const renamed = await owner.put(`/api/catalog/categories/${body.id}`).send({
+      name: 'Soups and Swallow',
+      shortName: 'Soups',
+      accent: 'ewedu',
+      notes: 'Weekends only',
+    })
     expect(renamed.body).toMatchObject({
       name: 'Soups and Swallow',
       shortName: 'Soups',
