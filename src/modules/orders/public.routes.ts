@@ -3,9 +3,10 @@ import { z } from 'zod'
 import { env } from '../../config/env.js'
 import { notFound, unauthorised } from '../../lib/errors.js'
 import { shopNow } from '../../lib/shopTime.js'
-import { enquiryLimiter, orderLimiter } from '../../middleware/rateLimit.js'
+import { addressLimiter, enquiryLimiter, orderLimiter } from '../../middleware/rateLimit.js'
 import { parse } from '../../middleware/validate.js'
 import { escapeHtml, sendEmail } from '../../services/email.js'
+import { placeAddress, suggestAddresses, addressSearchEnabled } from '../../services/places.js'
 import { addressLookupEnabled, listAddresses, locatePostcode } from '../../services/postcodes.js'
 import { optionalAccount } from '../accounts/accounts.auth.js'
 import { Category, Dish, OptionGroup } from '../catalog/catalog.model.js'
@@ -120,6 +121,8 @@ publicRouter.get('/site', async (_req, res) => {
     freeDeliveryThreshold: settings.freeDeliveryThreshold,
     stripePublishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
     addressLookup: addressLookupEnabled,
+    // Google type-ahead search, used instead of the postcode list when it is set up.
+    addressSearch: addressSearchEnabled(),
     accountRequired: settings.accountRequired,
   })
 })
@@ -154,6 +157,23 @@ publicRouter.get('/addresses/:postcode', orderLimiter, async (req, res) => {
     city: location.city,
     addresses: await listAddresses(location.postcode),
   })
+})
+
+const sessionToken = z.string().trim().min(8).max(100)
+
+/** Address suggestions as the customer types, from Google Places. */
+publicRouter.get('/places/search', addressLimiter, async (req, res) => {
+  const { q, session } = parse(
+    z.object({ q: z.string().trim().max(120), session: sessionToken }),
+    req.query,
+  )
+  res.json(await suggestAddresses(q, session))
+})
+
+/** The full address for the suggestion the customer picked. */
+publicRouter.get('/places/:id', addressLimiter, async (req, res) => {
+  const { session } = parse(z.object({ session: sessionToken }), req.query)
+  res.json(await placeAddress(String(req.params.id), session))
 })
 
 publicRouter.get('/offers', async (_req, res) => {

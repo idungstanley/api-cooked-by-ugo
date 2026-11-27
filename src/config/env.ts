@@ -25,6 +25,8 @@ const schema = z
     STRIPE_PUBLISHABLE_KEY: optional,
     /** Royal Mail address lookup. Without it, customers type their street. */
     IDEAL_POSTCODES_API_KEY: optional,
+    /** Google Places address search, preferred over Ideal Postcodes when set. Kept server-side. */
+    GOOGLE_MAPS_API_KEY: optional,
     /** The customer site, for links in emails such as "rate your order". */
     SITE_URL: z.string().default('http://localhost:5173'),
     /** Set on the VM, where the API is only reachable through the Cloudflare Tunnel. */

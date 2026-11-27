@@ -26,4 +26,6 @@ const limiter = (limit: number, minutes: number) =>
 
 export const authLimiter = limiter(10, 15)
 export const orderLimiter = limiter(20, 10)
+/** Address search runs as the customer types, so it allows more, but still caps the cost. */
+export const addressLimiter = limiter(150, 10)
 export const enquiryLimiter = limiter(5, 60)
