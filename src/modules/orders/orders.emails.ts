@@ -233,7 +233,11 @@ export const emailOrderUpdated = (order: OrderDoc, refunded: number) =>
   )
 
 /** Everything a rider needs on the road: where, who, what to collect, and a map. */
-export const emailRiderAssigned = (order: OrderDoc, rider: { name: string; email: string }) => {
+export const emailRiderAssigned = (
+  order: OrderDoc,
+  rider: { name: string; email: string },
+  kitchen?: { address?: string; postcode: string },
+) => {
   const destination = `${order.address}, ${order.postcode}`
   const mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
   sendEmail({
@@ -243,6 +247,7 @@ export const emailRiderAssigned = (order: OrderDoc, rider: { name: string; email
       heading: `You're delivering ${order.number}`,
       preview: `${order.customerName}, ${destination}`,
       body: `${paragraph(`Hi ${firstName(rider.name)}, this order is yours. ${escapeHtml(whenLine(order))}.`)}
+      ${kitchen ? panel(`${label('Collect from')}${kitchen.address ? `${escapeHtml(kitchen.address)}<br>` : ''}${escapeHtml(kitchen.postcode)}`) : ''}
       ${order.allergyNote ? panel(`<strong style="font-size:16px">⚠ Allergy: ${escapeHtml(order.allergyNote)}</strong>`, 'alert') : ''}
       ${panel(
         `${label('Deliver to')}<strong>${escapeHtml(order.customerName)}</strong><br>${escapeHtml(

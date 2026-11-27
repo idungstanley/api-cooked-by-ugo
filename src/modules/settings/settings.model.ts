@@ -16,7 +16,8 @@ export interface ShopSettingsDoc {
   ordersPaused: boolean
   hours: { day: number; open: boolean; opensAt: string; closesAt: string }[]
   closures: { id: string; date: string; label: string }[]
-  kitchen: { postcode: string; lat: number; lng: number }
+  /** `address` is the street, so riders know where to collect from. */
+  kitchen: { postcode: string; lat: number; lng: number; address?: string }
   deliveryRadii: DeliveryRadius[]
   /** Null when the shop does not offer free delivery over an amount. */
   freeDeliveryThreshold: number | null
@@ -48,7 +49,10 @@ export const ShopSettings = model<ShopSettingsDoc>(
       hours: [{ _id: false, day: Number, open: Boolean, opensAt: String, closesAt: String }],
       closures: [{ _id: false, id: String, date: String, label: String }],
       kitchen: {
-        type: new Schema({ postcode: String, lat: Number, lng: Number }, { _id: false }),
+        type: new Schema(
+          { postcode: String, lat: Number, lng: Number, address: String },
+          { _id: false },
+        ),
         default: () => ({ ...DEFAULT_KITCHEN }),
       },
       deliveryRadii: {

@@ -69,3 +69,11 @@ describe('free delivery', () => {
     expect(quote.body.deliveryFee).toBe(399)
   })
 })
+
+describe('address lookup', () => {
+  it('checks any UK postcode, even outside the delivery area', async () => {
+    const far = await request(app).get('/api/public/addresses/SW1A1AA').expect(200)
+    // Without an Ideal Postcodes key the list is empty and the customer types the street.
+    expect(far.body).toMatchObject({ postcode: 'SW1A 1AA', city: 'Westminster', addresses: [] })
+  })
+})

@@ -267,7 +267,7 @@ export const assignRider = async (orderId: string, riderId: string, staff: Staff
   await order.save()
   announceOrderChange(order)
   // Someone taking it out themselves already has the details on screen.
-  if (rider.id !== staff._id) emailRiderAssigned(order, rider)
+  if (rider.id !== staff._id) emailRiderAssigned(order, rider, (await getSettings()).kitchen)
   return order
 }
 

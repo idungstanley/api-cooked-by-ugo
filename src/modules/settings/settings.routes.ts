@@ -23,6 +23,7 @@ const settingsInput = z.object({
     z.object({ id: z.string(), date: z.string().min(1), label: z.string().min(1) }),
   ),
   kitchenPostcode: z.string().trim().min(5),
+  kitchenAddress: z.string().trim().max(200).optional(),
   deliveryRadii: z
     .array(
       z.object({
@@ -49,13 +50,13 @@ settingsRouter.get('/', async (_req, res) => {
 })
 
 settingsRouter.put('/', requirePermission('settings'), async (req, res) => {
-  const { kitchenPostcode, ...input } = parse(settingsInput, req.body)
+  const { kitchenPostcode, kitchenAddress, ...input } = parse(settingsInput, req.body)
   // The map and every delivery distance are measured from this point.
   const { postcode, lat, lng } = await locatePostcode(kitchenPostcode)
   res.json(
     await ShopSettings.findByIdAndUpdate(
       SETTINGS_ID,
-      { ...input, kitchen: { postcode, lat, lng } },
+      { ...input, kitchen: { postcode, lat, lng, address: kitchenAddress || undefined } },
       { returnDocument: 'after' },
     ),
   )

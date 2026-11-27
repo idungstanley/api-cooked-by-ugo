@@ -6,7 +6,7 @@ import { shopNow } from '../../lib/shopTime.js'
 import { enquiryLimiter, orderLimiter } from '../../middleware/rateLimit.js'
 import { parse } from '../../middleware/validate.js'
 import { escapeHtml, sendEmail } from '../../services/email.js'
-import { addressLookupEnabled, listAddresses } from '../../services/postcodes.js'
+import { addressLookupEnabled, listAddresses, locatePostcode } from '../../services/postcodes.js'
 import { optionalAccount } from '../accounts/accounts.auth.js'
 import { Category, Dish, OptionGroup } from '../catalog/catalog.model.js'
 import { getContent } from '../content/content.model.js'
@@ -141,6 +141,19 @@ publicRouter.get('/postcodes/:postcode', orderLimiter, async (req, res) => {
   const delivery = await quoteDelivery(String(req.params.postcode), await getSettings())
   const addresses = delivery.covered ? await listAddresses(delivery.postcode) : []
   res.json({ ...delivery, addresses })
+})
+
+/**
+ * Royal Mail addresses for any UK postcode, for sign-up, the account page and the kitchen's
+ * own address. Rate limited, because each lookup costs a little with Ideal Postcodes.
+ */
+publicRouter.get('/addresses/:postcode', orderLimiter, async (req, res) => {
+  const location = await locatePostcode(String(req.params.postcode))
+  res.json({
+    postcode: location.postcode,
+    city: location.city,
+    addresses: await listAddresses(location.postcode),
+  })
 })
 
 publicRouter.get('/offers', async (_req, res) => {
