@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { env } from '../../config/env.js'
-import { notFound } from '../../lib/errors.js'
+import { notFound, unauthorised } from '../../lib/errors.js'
 import { shopNow } from '../../lib/shopTime.js'
 import { enquiryLimiter, orderLimiter } from '../../middleware/rateLimit.js'
 import { parse } from '../../middleware/validate.js'
@@ -120,6 +120,7 @@ publicRouter.get('/site', async (_req, res) => {
     freeDeliveryThreshold: settings.freeDeliveryThreshold,
     stripePublishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
     addressLookup: addressLookupEnabled,
+    accountRequired: settings.accountRequired,
   })
 })
 
@@ -163,6 +164,8 @@ publicRouter.get('/reviews', async (_req, res) => {
 })
 
 publicRouter.post('/orders', orderLimiter, optionalAccount, async (req, res) => {
+  if (!req.account && (await getSettings()).accountRequired)
+    throw unauthorised('Please sign in or create an account to place your order')
   res.status(201).json(await createOrder(parse(orderInput, req.body), req.account?.id))
 })
 

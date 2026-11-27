@@ -1,10 +1,8 @@
 import request from 'supertest'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { hashToken } from '../src/modules/auth/auth.tokens.js'
-import { Account } from '../src/modules/accounts/accounts.model.js'
 import { Order } from '../src/modules/orders/orders.model.js'
 import { ShopSettings } from '../src/modules/settings/settings.model.js'
-import { app, jollof, placeOrder, resetDb, startDb, stopDb } from './helpers.js'
+import { app, jollof, orderBody, placeOrder, resetDb, startDb, stopDb } from './helpers.js'
 
 beforeAll(startDb)
 afterAll(stopDb)
@@ -30,38 +28,34 @@ const myOrders = (token: string) =>
   request(app).get('/api/account/orders').set('Authorization', `Bearer ${token}`)
 
 describe('guest orders and accounts', () => {
-  it('shows guest orders with the same email only after the email is confirmed', async () => {
+  it('shows earlier guest orders when both the email and phone match', async () => {
     const { order } = await placeOrder()
     await markPaid(order.id)
-    const { token, account } = await signUp()
+    // Same email but a different phone: someone else's order stays hidden.
+    const { order: stranger } = await placeOrder({
+      delivery: { ...orderBody().delivery, phone: '07400 654321' },
+    })
+    await markPaid(stranger.id)
 
-    // Anyone could sign up with someone else's email, so nothing shows until it is confirmed.
-    expect((await myOrders(token)).body).toHaveLength(0)
-
-    await Account.updateOne(
-      { _id: account.id },
-      { verifyTokenHash: hashToken('confirm-token-123') },
-    )
-    const verified = await request(app)
-      .post('/api/account/verify-email')
-      .send({ token: 'confirm-token-123' })
-      .expect(200)
-    expect(verified.body.emailVerifiedAt).toBeTruthy()
-
+    const { token } = await signUp()
     const orders = (await myOrders(token)).body as { id: string }[]
     expect(orders.map(({ id }) => id)).toEqual([order.id])
-
-    // Guest orders placed later, while signed out, are picked up too.
-    const { order: later } = await placeOrder()
-    await markPaid(later.id)
-    expect((await myOrders(token)).body).toHaveLength(2)
   })
+})
 
-  it('rejects an unknown confirmation link', async () => {
+describe('accounts required', () => {
+  it('asks guests to sign in before ordering, and lets account holders order', async () => {
+    await ShopSettings.updateOne({}, { accountRequired: true })
+    const guest = await request(app).post('/api/public/orders').send(orderBody())
+    expect(guest.status).toBe(401)
+    expect(guest.body.message).toMatch(/sign in or create an account/)
+
+    const { token } = await signUp()
     await request(app)
-      .post('/api/account/verify-email')
-      .send({ token: 'not-a-real-token' })
-      .expect(401)
+      .post('/api/public/orders')
+      .set('Authorization', `Bearer ${token}`)
+      .send(orderBody())
+      .expect(201)
   })
 })
 

@@ -30,6 +30,7 @@ import { Staff } from '../staff/staff.model.js'
 import {
   emailCancelled,
   emailDelivered,
+  emailRiderAssigned,
   emailOrderConfirmation,
   emailOutForDelivery,
   emailRefund,
@@ -265,6 +266,8 @@ export const assignRider = async (orderId: string, riderId: string, staff: Staff
   order.events.push(event(staff.name, `Assigned to ${rider.name}`))
   await order.save()
   announceOrderChange(order)
+  // Someone taking it out themselves already has the details on screen.
+  if (rider.id !== staff._id) emailRiderAssigned(order, rider)
   return order
 }
 

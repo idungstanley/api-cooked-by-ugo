@@ -390,9 +390,13 @@ describe('timing', () => {
     const { order } = await placeOrder()
     expect(order).toMatchObject({ etaMinutes: 85, deliveryMinutes: 25 })
 
+    // A scheduled slot is when cooking starts, so the food arrives 85 minutes after it.
     const slots = await request(app).get('/api/public/slots').expect(200)
-    const earliest = (slots.body as { at: number }[])[0]?.at ?? Infinity
-    expect(earliest - Date.now()).toBeGreaterThanOrEqual(85 * 60_000 - 60_000)
+    const first = (slots.body as { at: number; arrivesAt: number }[])[0]
+    if (first) {
+      expect(first.at).toBeGreaterThan(Date.now())
+      expect(first.arrivesAt - first.at).toBe(85 * 60_000)
+    }
   })
 })
 

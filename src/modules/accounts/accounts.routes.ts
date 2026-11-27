@@ -53,16 +53,26 @@ const sendVerification = async (account: InstanceType<typeof Account>) => {
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&')
 
-/** Gives a verified account the guest orders placed with the same email, in any letter case. */
+const digits = (value = '') => value.replace(/\D/g, '')
+
+/**
+ * Gives an account the guest orders placed before it existed. Both the email and the phone
+ * must match, so signing up with someone else's email alone shows nothing.
+ */
 const claimGuestOrders = async (account: InstanceType<typeof Account>) => {
-  if (!account.emailVerifiedAt) return
-  await Order.updateMany(
+  const phone = digits(account.phone)
+  if (!phone) return
+  const candidates = await Order.find(
     {
       accountId: { $exists: false },
       customerEmail: new RegExp(`^${escapeRegex(account.email)}$`, 'i'),
     },
-    { accountId: account.id },
+    { customerPhone: 1 },
   )
+  const ids = candidates
+    .filter((order) => digits(order.customerPhone) === phone)
+    .map(({ id }) => id)
+  if (ids.length > 0) await Order.updateMany({ _id: { $in: ids } }, { accountId: account.id })
 }
 
 const sendSession = (res: Response, account: InstanceType<typeof Account>, status = 200) =>
@@ -90,7 +100,7 @@ accountsRouter.post('/signup', authLimiter, async (req, res) => {
     if (isDuplicateKey(error)) throw conflict('That email already has an account. Please sign in.')
     throw error
   })
-  await sendVerification(account)
+  await claimGuestOrders(account)
   sendSession(res, account, 201)
 })
 
@@ -150,7 +160,7 @@ accountsRouter.post('/resend-verification', requireAccount, authLimiter, async (
 
 accountsRouter.get('/orders', requireAccount, async (req, res) => {
   const account = currentAccount(req)
-  // Guest orders placed since the customer verified are picked up here too.
+  // Picks up guest orders too, for example after the customer adds their phone number.
   await claimGuestOrders(account)
   const orders = await Order.find({ accountId: account.id, status: { $ne: 'pending-payment' } })
     .sort({ createdAt: -1 })

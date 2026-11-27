@@ -54,15 +54,25 @@ const paymentLine = (order: OrderDoc) =>
     ? 'Paid by card.'
     : `Pay ${money(order.total)} when your food arrives.`
 
-const whenLine = (order: OrderDoc) =>
+/** When the food arrives: the order time, or the scheduled start, plus preparation and delivery. */
+export const arrivalTime = (order: Pick<OrderDoc, 'createdAt' | 'scheduledFor' | 'etaMinutes'>) =>
+  new Date((order.scheduledFor ?? order.createdAt).getTime() + order.etaMinutes * 60_000)
+
+const clock = (time: Date) =>
+  time.toLocaleString('en-GB', {
+    weekday: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/London',
+  })
+
+const whenLine = (order: OrderDoc) => `Arriving about ${clock(arrivalTime(order))}`
+
+/** The kitchen also needs to know when to start a scheduled order. */
+const kitchenWhen = (order: OrderDoc) =>
   order.scheduledFor
-    ? `Arriving ${order.scheduledFor.toLocaleString('en-GB', {
-        weekday: 'long',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'Europe/London',
-      })}`
-    : `Arriving in about ${order.etaMinutes} minutes`
+    ? `Start cooking ${clock(order.scheduledFor)}. ${whenLine(order)}`
+    : whenLine(order)
 
 /** Name, address and phone, like the top of a delivery note. */
 const deliveryPanel = (order: OrderDoc) =>
@@ -88,7 +98,7 @@ export const emailOrderConfirmation = (order: OrderDoc) => {
     order,
     `Order ${order.number} confirmed`,
     'Ugo has your order!',
-    `${paragraph(`Great choice, ${firstName(order.customerName)}. Order <strong>${order.number}</strong> is in, and ${escapeHtml(whenLine(order).toLowerCase())}.`)}
+    `${paragraph(`Great choice, ${firstName(order.customerName)}. Order <strong>${order.number}</strong> is in, and arriving about ${escapeHtml(clock(arrivalTime(order)))}.`)}
     ${deliveryPanel(order)}
     ${button('Track your order', trackingUrl(order))}
     ${receipt(order)}
@@ -111,7 +121,7 @@ export const emailOrderConfirmation = (order: OrderDoc) => {
               )
             : ''
         }
-        ${paragraph(`<strong>${escapeHtml(whenLine(order))}</strong>. ${paymentLine(order)}`)}
+        ${paragraph(`<strong>${escapeHtml(kitchenWhen(order))}</strong>. ${paymentLine(order)}`)}
         ${panel(
           `${label('Customer')}<strong>${escapeHtml(order.customerName)}</strong><br>${escapeHtml(
             order.customerPhone,
@@ -181,7 +191,7 @@ export const emailScheduledReminder = (order: OrderDoc) =>
     order,
     `Order ${order.number} is coming up`,
     'Your order is coming up',
-    `${paragraph(`Hi ${firstName(order.customerName)}, a quick reminder that order <strong>${order.number}</strong> is ${escapeHtml(whenLine(order).toLowerCase())}.`)}
+    `${paragraph(`Hi ${firstName(order.customerName)}, a quick reminder that order <strong>${order.number}</strong> is arriving about ${escapeHtml(clock(arrivalTime(order)))}.`)}
     ${deliveryPanel(order)}
     ${receipt(order)}
     ${button('Track your order', trackingUrl(order))}`,
@@ -221,3 +231,39 @@ export const emailOrderUpdated = (order: OrderDoc, refunded: number) =>
     }
     ${button('Track your order', trackingUrl(order))}`,
   )
+
+/** Everything a rider needs on the road: where, who, what to collect, and a map. */
+export const emailRiderAssigned = (order: OrderDoc, rider: { name: string; email: string }) => {
+  const destination = `${order.address}, ${order.postcode}`
+  const mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+  sendEmail({
+    to: rider.email,
+    subject: `Delivery ${order.number} · ${order.postcode}`,
+    html: layout({
+      heading: `You're delivering ${order.number}`,
+      preview: `${order.customerName}, ${destination}`,
+      body: `${paragraph(`Hi ${firstName(rider.name)}, this order is yours. ${escapeHtml(whenLine(order))}.`)}
+      ${order.allergyNote ? panel(`<strong style="font-size:16px">⚠ Allergy: ${escapeHtml(order.allergyNote)}</strong>`, 'alert') : ''}
+      ${panel(
+        `${label('Deliver to')}<strong>${escapeHtml(order.customerName)}</strong><br>${escapeHtml(
+          order.address,
+        )}<br>${escapeHtml(order.postcode)}${
+          order.distanceMiles != null ? ` (${order.distanceMiles.toFixed(1)} miles)` : ''
+        }<br><a href="tel:${escapeHtml(order.customerPhone.replace(/\s/g, ''))}" style="color:#C8401C">${escapeHtml(
+          order.customerPhone,
+        )}</a>${order.deliveryNote ? `<br><em>Note: ${escapeHtml(order.deliveryNote)}</em>` : ''}`,
+      )}
+      ${button('Open in Maps', mapUrl)}
+      ${
+        order.paymentStatus === 'due'
+          ? panel(
+              `${label('Collect payment')}<strong>${money(order.total)}</strong> in cash or by card on the doorstep.`,
+              'alert',
+            )
+          : paragraph('Already paid by card. Nothing to collect.')
+      }
+      ${priceRows(itemRows(order).map(({ name, detail }) => ({ name, detail, amount: '' })))}
+      ${button('My deliveries', `${env.ADMIN_URL}/deliveries`)}`,
+    }),
+  })
+}

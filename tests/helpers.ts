@@ -49,6 +49,8 @@ export const resetDb = async () => {
     {
       // The pricing tests cover free delivery over £25.
       freeDeliveryThreshold: 2500,
+      // Most tests place guest orders. The account rule has its own test.
+      accountRequired: false,
       hours: [0, 1, 2, 3, 4, 5, 6].map((day) => ({
         day,
         open: true,

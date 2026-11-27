@@ -24,6 +24,8 @@ export interface ShopSettingsDoc {
   prepMinutes: number
   /** Average time on the road from the kitchen to the door. */
   deliveryMinutes: number
+  /** Customers must sign in or create an account to place an order. */
+  accountRequired: boolean
 }
 
 export const SETTINGS_ID = 'shop'
@@ -65,6 +67,7 @@ export const ShopSettings = model<ShopSettingsDoc>(
       freeDeliveryThreshold: { type: Number, default: null },
       prepMinutes: { type: Number, default: 30 },
       deliveryMinutes: { type: Number, default: 20 },
+      accountRequired: { type: Boolean, default: true },
     },
     baseOptions,
   ),

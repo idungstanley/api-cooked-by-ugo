@@ -15,20 +15,30 @@ export const isOpenAt = (settings: ShopSettingsDoc, time = new Date()) => {
   return Boolean(window && minutes >= window.opens && minutes < window.closes)
 }
 
-/** Delivery times left today, far enough ahead to cook and deliver, and inside opening hours. */
+/**
+ * Times left today for a scheduled order. A slot is when the kitchen starts on it, so it must
+ * be in the future and inside opening hours. The food arrives preparation plus delivery later.
+ */
 export const getTodaySlots = (settings: ShopSettingsDoc, time = new Date()) => {
   const window = todaysWindow(settings, time)
   if (!window) return []
 
   const { minutes } = shopNow(time)
-  const earliest = Math.max(minutes + leadMinutes(settings), window.opens)
+  const earliest = Math.max(minutes + 1, window.opens)
   const first = Math.ceil(earliest / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES
-  const slots: { at: number; label: string }[] = []
+  const lead = leadMinutes(settings) * 60_000
+  const slots: { at: number; label: string; arrivesAt: number; arrivalLabel: string }[] = []
 
   for (let slot = first; slot < window.closes; slot += SLOT_STEP_MINUTES) {
     const at = new Date(time.getTime() + (slot - minutes) * 60_000)
     at.setSeconds(0, 0)
-    slots.push({ at: at.getTime(), label: formatSlot(at) })
+    const arrives = new Date(at.getTime() + lead)
+    slots.push({
+      at: at.getTime(),
+      label: formatSlot(at),
+      arrivesAt: arrives.getTime(),
+      arrivalLabel: formatSlot(arrives),
+    })
   }
   return slots
 }
