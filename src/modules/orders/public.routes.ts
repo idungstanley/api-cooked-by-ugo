@@ -167,7 +167,12 @@ publicRouter.get('/places/search', addressLimiter, async (req, res) => {
     z.object({ q: z.string().trim().max(120), session: sessionToken }),
     req.query,
   )
-  res.json(await suggestAddresses(q, session))
+  const { kitchen, deliveryRadii } = await getSettings()
+  const miles = Math.max(
+    5,
+    ...deliveryRadii.filter(({ active }) => active).map(({ maxMiles }) => maxMiles),
+  )
+  res.json(await suggestAddresses(q, session, { lat: kitchen.lat, lng: kitchen.lng, miles }))
 })
 
 /** The full address for the suggestion the customer picked. */

@@ -30,10 +30,21 @@ const headers = (fieldMask?: string) => ({
 
 const SEARCH_FAILED = 'Address search is not available right now. Please type your address.'
 
-/** Suggestions for what the customer has typed so far, UK only. */
+/** Where results should come from first: a circle around the kitchen. */
+export interface SearchNear {
+  lat: number
+  lng: number
+  miles: number
+}
+
+/** Google allows a bias circle of up to 50 km. */
+const MAX_RADIUS_METRES = 50_000
+
+/** Suggestions for what the customer has typed so far, UK only, nearest the kitchen first. */
 export const suggestAddresses = async (
   input: string,
   sessionToken: string,
+  near?: SearchNear,
 ): Promise<AddressSuggestion[]> => {
   if (!addressSearchEnabled() || input.trim().length < 3) return []
   const response = await fetch(`${BASE}/places:autocomplete`, {
@@ -44,6 +55,15 @@ export const suggestAddresses = async (
       sessionToken,
       includedRegionCodes: ['gb'],
       languageCode: 'en-GB',
+      ...(near && {
+        locationBias: {
+          circle: {
+            center: { latitude: near.lat, longitude: near.lng },
+            radius: Math.min(near.miles * 1609.34, MAX_RADIUS_METRES),
+          },
+        },
+        origin: { latitude: near.lat, longitude: near.lng },
+      }),
     }),
   }).catch(() => null)
   if (!response?.ok) throw unprocessable(SEARCH_FAILED)
